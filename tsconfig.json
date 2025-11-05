@@ -1,0 +1,8 @@
+{
+  "files": [],
+  "exclude": ["src/Figmamake/**"],
+  "references": [
+    { "path": "./tsconfig.app.json" },
+    { "path": "./tsconfig.node.json" }
+  ]
+}
