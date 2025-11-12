@@ -122,3 +122,43 @@ exports.updateModelSetting = function(req, res, next){
     res.json({ updated: !!ok });
   });
 };
+
+// ── 댓글(버전 단위) ─────────────────────
+exports.listComments = (req, res, next) => {
+  // TODO: svc.listComments(userId, promptId, verId, query, cb)
+  return res.status(501).json({ error: 'NOT_IMPLEMENTED' });
+};
+exports.createComment = (req, res, next) => {
+  // TODO: svc.createComment(userId, promptId, verId, body, cb)
+  return res.status(501).json({ error: 'NOT_IMPLEMENTED' });
+};
+exports.deleteComment = (req, res, next) => {
+  // TODO: svc.deleteComment(userId, commentId, cb)
+  return res.status(501).json({ error: 'NOT_IMPLEMENTED' });
+};
+
+// ── 즐겨찾기(버전 단위) ─────────────────
+exports.starVersion = (req, res, next) => {
+  // TODO: svc.starVersion(userId, promptId, verId, cb)
+  return res.status(201).json({ starred: true });
+};
+exports.unstarVersion = (req, res, next) => {
+  // TODO: svc.unstarVersion(userId, promptId, verId, cb)
+  return res.status(204).end();
+};
+
+// ── 포크 ────────────────────────────────
+exports.forkPromptFromVersion = (req, res, next) => {
+  // TODO: svc.forkPromptFromVersion(userId, promptId, body.source_version_id, body.new_name, cb)
+  return res.status(501).json({ error: 'NOT_IMPLEMENTED' });
+};
+
+// ── 태그/카테고리 ───────────────────────
+exports.listTags = (req, res, next) => {
+  // TODO: svc.listTags(q, cb)
+  return res.json({ items: [] });
+};
+exports.listCategories = (req, res, next) => {
+  // TODO: svc.listCategories(cb)
+  return res.json({ items: [] });
+};

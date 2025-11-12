@@ -334,7 +334,7 @@ exports.createVersion = function(userId, promptId, body, done){
     ensureOwner(conn, userId, promptId, function(err){
       if (err) return cb(err);
 
-      conn.query('SELECT COUNT(*) AS c FROM prompt_version WHERE prompt_id = ?', [promptId], function(err2, cnt){
+      conn.query('SELECT IFNULL(MAX(version_number), 0) + 1 AS next_no FROM prompt_version WHERE prompt_id = ?', [promptId], function(err2, cnt){
         if (err2) return cb(err2);
         const version_number = Number(cnt[0].c) + 1;
 
