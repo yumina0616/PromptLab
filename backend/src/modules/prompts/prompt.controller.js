@@ -125,27 +125,60 @@ exports.updateModelSetting = function(req, res, next){
 
 // ── 댓글(버전 단위) ─────────────────────
 exports.listComments = (req, res, next) => {
-  // TODO: svc.listComments(userId, promptId, verId, query, cb)
-  return res.status(501).json({ error: 'NOT_IMPLEMENTED' });
-};
-exports.createComment = (req, res, next) => {
-  // TODO: svc.createComment(userId, promptId, verId, body, cb)
-  return res.status(501).json({ error: 'NOT_IMPLEMENTED' });
-};
-exports.deleteComment = (req, res, next) => {
-  // TODO: svc.deleteComment(userId, commentId, cb)
-  return res.status(501).json({ error: 'NOT_IMPLEMENTED' });
+  const userId = req.user.id;
+  const promptId = Number(req.params.id);
+  const verId = Number(req.params.verId);
+  const page = Number(req.query.page || 1);
+  const limit = Number(req.query.limit || 20);
+  svc.listComments(userId, promptId, verId, { page, limit }, (err, items) => {
+    if (err) return next(err);
+    res.json({ items });
+  });
 };
 
+exports.createComment = (req, res, next) => {
+  const userId = req.user.id;
+  const promptId = Number(req.params.id);
+  const verId = Number(req.params.verId);
+  const body = (req.body && req.body.body || '').trim();
+  if (!body) return res.status(400).json({ error: 'body 필수' });
+  svc.createComment(userId, promptId, verId, body, (err, cmt) => {
+    if (err) return next(err);
+    res.status(201).json(cmt);
+  });
+};
+
+exports.deleteComment = (req, res, next) => {
+  const userId = req.user.id;
+  const commentId = Number(req.params.commentId);
+  svc.deleteComment(userId, commentId, (err) => {
+    if (err) return next(err);
+    res.status(204).end();
+  });
+};
+
+
 // ── 즐겨찾기(버전 단위) ─────────────────
-exports.starVersion = (req, res, next) => {
-  // TODO: svc.starVersion(userId, promptId, verId, cb)
-  return res.status(201).json({ starred: true });
+exports.addFavorite = (req, res, next) => {
+  const userId = req.user.id;
+  const promptId = Number(req.params.id);
+  const verId = Number(req.params.verId);
+  svc.addFavorite(userId, promptId, verId, (err, ok) => {
+    if (err) return next(err);
+    res.status(201).json({ starred: !!ok });
+  });
 };
-exports.unstarVersion = (req, res, next) => {
-  // TODO: svc.unstarVersion(userId, promptId, verId, cb)
-  return res.status(204).end();
+
+exports.removeFavorite = (req, res, next) => {
+  const userId = req.user.id;
+  const promptId = Number(req.params.id);
+  const verId = Number(req.params.verId);
+  svc.removeFavorite(userId, promptId, verId, (err) => {
+    if (err) return next(err);
+    res.status(204).end();
+  });
 };
+
 
 // ── 포크 ────────────────────────────────
 exports.forkPromptFromVersion = (req, res, next) => {
@@ -155,10 +188,16 @@ exports.forkPromptFromVersion = (req, res, next) => {
 
 // ── 태그/카테고리 ───────────────────────
 exports.listTags = (req, res, next) => {
-  // TODO: svc.listTags(q, cb)
-  return res.json({ items: [] });
+  const q = (req.query.q || '').trim();
+  svc.listTags(q, (err, items) => {
+    if (err) return next(err);
+    res.json({ items });
+  });
 };
+
 exports.listCategories = (req, res, next) => {
-  // TODO: svc.listCategories(cb)
-  return res.json({ items: [] });
+  svc.listCategories((err, items) => {
+    if (err) return next(err);
+    res.json({ items });
+  });
 };

@@ -25,8 +25,8 @@ router.post('/:id/versions/:verId/comments', c.createComment);
 router.delete('/:id/versions/:verId/comments/:commentId', c.deleteComment);
 
 // 즐겨찾기(버전 단위)
-router.post('/:id/versions/:verId/favorite', c.starVersion);
-router.delete('/:id/versions/:verId/favorite', c.unstarVersion);
+router.post('/:id/versions/:verId/favorite', c.addFavorite);
+router.delete('/:id/versions/:verId/favorite', c.removeFavorite);
 
 // 포크
 router.post('/:id/fork', c.forkPromptFromVersion);
