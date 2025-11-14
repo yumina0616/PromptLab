@@ -1,48 +1,41 @@
 const express = require('express');
-const usersController = require('./users.controller'); // (복수형)
+const usersController = require('./users.controller');
 const { protect } = require('../../middlewares/protect');
-const { isSelf, optionalAuth } = require('../../middlewares/authz'); // (인가 미들웨어)
+const { isSelf, optionalAuth } = require('../../middlewares/authz');
 const { validateProfileUpdate } = require('../../middlewares/validate');
 
 const router = express.Router();
 
-// --- 3) ~ 7) 목록형 API (먼저 정의) ---
-// (주의: :userid 보다 먼저 정의되어야 라우트가 겹치지 않음)
-router.get('/:userid/prompts', usersController.getPrompts);
-router.get('/:userid/favorites', usersController.getFavorites);
-router.get('/:userid/forks', usersController.getForks);
-router.get('/:userid/activity', usersController.getActivity);
+// --- 3) ~ 7) 목록형 API ---
 
-// (로그인 필수, 본인 확인 필수)
+// 3) 내가 만든 프롬프트 목록  (선택적 인증)
+router.get('/:userid/prompts', optionalAuth, usersController.getPrompts);
+
+// 4) 내가 즐겨찾기한 프롬프트 (본인만)
+router.get('/:userid/favorites', protect, isSelf, usersController.getFavorites);
+
+// 5) 내가 포크한 프롬프트 (본인만)
+router.get('/:userid/forks', protect, isSelf, usersController.getForks);
+
+// 6) 활동 로그 (본인만)
+router.get('/:userid/activity', protect, isSelf, usersController.getActivity);
+
+// 7) 내 데이터 내보내기 (이미 OK)
 router.get('/:userid/export', protect, isSelf, usersController.exportData);
 
+// --- 8) 계정 삭제 ---
+router.delete('/:userid', protect, isSelf, usersController.deleteAccount);
 
-// --- 8) 계정 삭제 (로그인 필수, 본인 확인 필수) ---
-// (주의) DELETE 요청은 body를 가질 수 있음
-router.delete(
-  '/:userid', 
-  protect, 
-  isSelf, 
-  usersController.deleteAccount
-);
-
-
-// --- 2) 프로필 수정 (로그인 필수, 본인 확인 필수) ---
+// --- 2) 프로필 수정 ---
 router.patch(
-  '/:userid', 
-  protect, 
-  isSelf, 
-  validateProfileUpdate, // (유효성 검사)
+  '/:userid',
+  protect,
+  isSelf,
+  validateProfileUpdate,
   usersController.updateProfile
 );
 
-// --- 1) 공개 프로필 조회 (맨 마지막에 매칭) ---
-// (선택적 인증: optionalAuth)
-router.get(
-  '/:userid', 
-  optionalAuth, 
-  usersController.getProfile
-);
-
+// --- 1) 공개 프로필 조회 ---
+router.get('//:userid', optionalAuth, usersController.getProfile);
 
 module.exports = router;
