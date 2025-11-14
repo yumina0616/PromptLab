@@ -1,5 +1,6 @@
-const pool = require('../../shared/db');
-const { NotFoundError, ConflictError, BadRequestError } = require('../../shared/error');
+// 콜백 풀이 아니라 Promise 풀을 사용
+const pool = require('../../shared/db').promise();
+const { NotFoundError, ConflictError, BadRequestError, UnauthorizedError, } = require('../../shared/error');
 const uuid = require('uuid');
 const config = require('../../config');
 const { generateSlug } = require('../../shared/utils');
@@ -65,40 +66,54 @@ exports.createWorkspace = async (data, userId) => {
 /**
  * 사용자가 속한 워크스페이스 목록을 조회합니다. (스펙 2)
  */
+/**
+ * 사용자가 속한 워크스페이스 목록을 조회합니다. (스펙 2)
+ */
 exports.getMyWorkspaces = async (userId, pagination) => {
-    // 개인 워크스페이스는 자동 생성된다고 가정하고 (user_id = created_by),
-    // 쿼리에서 team과 personal을 모두 조회합니다.
-    const q = pagination.q ? `%${pagination.q}%` : '%';
-    const sortField = pagination.sort === 'name' ? 'w.name' : 'wm.joined_at'; // recent: joined_at 기준 정렬
+  if (!userId) {
+    throw new UnauthorizedError('UNAUTHORIZED', 'User id is missing');
+  }
 
-    const query = `
-        SELECT 
-            w.id, w.kind, w.name, w.slug, wm.role
-        FROM 
-            workspace_members wm
-        JOIN 
-            workspaces w ON wm.workspace_id = w.id
-        WHERE 
-            wm.user_id = ? AND w.name LIKE ?
-        ORDER BY 
-            ${sortField} DESC
-        LIMIT ? OFFSET ?
-    `;
-    const [items] = await pool.execute(query, [
-        userId, q, pagination.limit, (pagination.page - 1) * pagination.limit
-    ]);
+  const q = pagination.q ? `%${pagination.q}%` : '%';
+  const sortField = pagination.sort === 'name' ? 'w.name' : 'wm.joined_at';
 
-    const [[{ total }]] = await pool.query(
-        'SELECT COUNT(w.id) AS total FROM workspace_members wm JOIN workspaces w ON wm.workspace_id = w.id WHERE wm.user_id = ? AND w.name LIKE ?',
-        [userId, q]
-    );
-    
-    return {
-        items: items,
-        page: pagination.page,
-        limit: pagination.limit,
-        total: total,
-    };
+  const page = Number(pagination.page) || 1;
+  const limit = Number(pagination.limit) || 20;
+  const offset = (page - 1) * limit;
+
+  // ⚠️ LIMIT / OFFSET 은 문자열로 직접 넣어줌
+  const query = `
+    SELECT 
+      w.id, w.kind, w.name, w.slug, wm.role
+    FROM 
+      workspace_members wm
+    JOIN 
+      workspaces w ON wm.workspace_id = w.id
+    WHERE 
+      wm.user_id = ? AND w.name LIKE ?
+    ORDER BY 
+      ${sortField} DESC
+    LIMIT ${limit} OFFSET ${offset}
+  `;
+
+  // ? 는 userId, q 두 개만 남김
+  const [items] = await pool.execute(query, [userId, q]);
+
+  const countSql = `
+    SELECT COUNT(w.id) AS total
+    FROM workspace_members wm
+    JOIN workspaces w ON wm.workspace_id = w.id
+    WHERE wm.user_id = ? AND w.name LIKE ?
+  `;
+  const [countRows] = await pool.execute(countSql, [userId, q]);
+  const total = countRows[0]?.total || 0;
+
+  return {
+    items,
+    page,
+    limit,
+    total,
+  };
 };
 
 /**
@@ -113,7 +128,11 @@ exports.getWorkspaceDetail = async (workspaceId) => {
     if (!workspace) return null;
 
     // 생성자 정보 로드
-    const createdByUser = await userService.getUserById(workspace.created_by);
+    const [creatorRows] = await pool.execute(
+    'SELECT id, userid FROM users WHERE id = ?',
+    [workspace.created_by]
+    );
+    const createdByUser = creatorRows[0] || null;
 
     // 멤버 수
     const [[{ memberCount }]] = await pool.query('SELECT COUNT(*) AS memberCount FROM workspace_members WHERE workspace_id = ?', [workspaceId]);
@@ -314,7 +333,7 @@ exports.sendInvite = async (workspaceId, inviterId, email, role) => {
     const conn = await beginTransaction();
     try {
         // 1. 이미 멤버인지 확인 (중복 초대 방지)
-        const [user] = await userService.getUserByEmail(email);
+        const user = await userService.getUserByEmail(email);
         if (user) {
             const [existingMember] = await conn.execute(
                 'SELECT 1 FROM workspace_members WHERE workspace_id = ? AND user_id = ?',

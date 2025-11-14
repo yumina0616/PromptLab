@@ -10,7 +10,7 @@ const generateRefreshToken = (userId) => {
   return jwt.sign({ id: userId }, config.jwt.refreshSecret, { expiresIn: config.jwt.refreshTtl });
 };
 const { validationResult } = require('express-validator');
-const { BadRequestError, ApiError } = require('../../shared/error');
+const { BadRequestError, ApiError, UnauthorizedError } = require('../../shared/error');
 const passport = require('passport');
 
 // (PDF 스펙) HttpOnly 쿠키 설정
@@ -72,16 +72,28 @@ const authController = {
   },
 
   // POST /refresh
+
   refresh: async (req, res, next) => {
     try {
-      // (PDF 스펙) 쿠키에서 refresh_token 읽기
-      const token = req.cookies.refresh_token; 
+      // 1) Body에서 먼저 찾아보고
+      const tokenFromBody =
+        req.body && (req.body.refresh_token || req.body.refreshToken);
+
+      // 2) 쿠키에서도 시도 (있으면 사용)
+      const tokenFromCookie =
+        req.cookies && (req.cookies.refresh_token || req.cookies.refreshToken);
+
+      // 3) 헤더에서도 받을 수 있게 여유 (선택)
+      const tokenFromHeader = req.headers['x-refresh-token'];
+
+      const token = tokenFromBody || tokenFromCookie || tokenFromHeader;
+
       if (!token) {
-         throw new UnauthorizedError('INVALID_REFRESH_TOKEN', 'No refresh token provided');
+        throw new UnauthorizedError('INVALID_REFRESH_TOKEN', 'No refresh token provided');
       }
-      
+
       const data = await authService.refresh(token);
-      
+
       // (PDF 스펙)
       res.status(200).json({
         access_token: data.accessToken,
@@ -91,6 +103,7 @@ const authController = {
       next(error);
     }
   },
+
 
   // POST /logout
   logout: async (req, res, next) => {

@@ -4,7 +4,7 @@ const express = require('express');
 const router = express.Router();
 
 const workspaceService = require('./workspaces.service');
-const { BadRequestError } = require('../../shared/error');
+const { BadRequestError, UnauthorizedError } = require('../../shared/error');
 const config = require('../../config');
 
 const defaultPagination = { page: 1, limit: 20 };
@@ -25,20 +25,32 @@ const createWorkspace = async (req, res, next) => {
 };
 
 // GET /api/v1/workspaces
+// GET /api/v1/workspaces
 const getWorkspaces = async (req, res, next) => {
   try {
+    const userId = req.user?.id || 1; // 지금은 1번 유저 강제 사용
+
+    if (!userId) {
+      throw new UnauthorizedError('UNAUTHORIZED', 'Not authorized, no user');
+    }
+
+    const page = Number.parseInt(req.query.page, 10) || defaultPagination.page;
+    const limit = Number.parseInt(req.query.limit, 10) || defaultPagination.limit;
+
     const pagination = {
-      page: parseInt(req.query.page) || defaultPagination.page,
-      limit: parseInt(req.query.limit) || defaultPagination.limit,
+      page,
+      limit,
       q: req.query.q,
       sort: req.query.sort || 'recent',
     };
-    const result = await workspaceService.getMyWorkspaces(req.user?.id || 1, pagination);
+
+    const result = await workspaceService.getMyWorkspaces(userId, pagination);
     res.status(200).json(result);
   } catch (error) {
     next(error);
   }
 };
+
 
 // GET /api/v1/workspaces/:id
 const getWorkspaceDetail = async (req, res, next) => {
