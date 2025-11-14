@@ -1,7 +1,7 @@
-const app = require('./app');
-const config = require('../config');
-const pool = require('./db');
-// const logger = require('../config/logger'); // (logger.js가 있다고 가정)
+const app = require('./app'); // (변경) ./app
+const config = require('./config'); // (변경) ./config
+const pool = require('./shared/db'); // (변경) ./shared/db
+// const logger = require('./config/logger');
 
 // DB 연결 테스트
 pool.getConnection()

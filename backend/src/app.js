@@ -2,9 +2,9 @@ const express = require('express');
 const cors = require('cors');
 const morgan = require('morgan');
 const passport = require('passport');
-const setupPassport = require('../modules/auth/passport');
-const mainRouter = require('./routes');
-const { ApiError, NotFoundError } = require('./error');
+const setupPassport = require('./modules/auth/passport'); // (변경) ./modules/auth/passport
+const mainRouter = require('./routes'); // (변경) ./routes
+const { ApiError, NotFoundError } = require('./shared/error'); // (변경) ./shared/error
 
 const app = express();
 
@@ -17,7 +17,7 @@ app.use(express.json());
 app.use(passport.initialize());
 setupPassport(passport); 
 
-// --- [수정] 베이스 URL /api/v1로 변경 ---
+// --- 베이스 URL /api/v1로 변경 ---
 app.use('/api/v1', mainRouter);
 
 // 404 처리 미들웨어
@@ -25,7 +25,7 @@ app.use((req, res, next) => {
   next(new NotFoundError('NOT_FOUND', 'API endpoint not found'));
 });
 
-// --- [수정] 글로벌 에러 핸들러 (PDF 스펙) ---
+// --- 글로벌 에러 핸들러 (PDF 스펙) ---
 app.use((err, req, res, next) => {
   console.error(err);
   

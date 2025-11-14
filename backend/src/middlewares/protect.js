@@ -1,5 +1,5 @@
 const { verifyAccessToken } = require('../modules/auth/jwt');
-const userService = require('../modules/users/user.service');
+const userService = require('../modules/users/users.service');
 const { UnauthorizedError } = require('../shared/error');
 
 const protect = async (req, res, next) => {

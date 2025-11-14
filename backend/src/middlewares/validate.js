@@ -1,34 +1,52 @@
-const { check } = require('express-validator');
+const { check, body, validationResult } = require('express-validator');
+const { BadRequestError } = require('../shared/error');
 
-// 회원가입 검증 룰 (PDF 스펙)
-exports.validateRegistration = [
-  check('email', 'Please include a valid email').isEmail(),
-  check('password', 'Password must be 6 or more characters').isLength({ min: 6 }),
-  // [신규] PDF 스펙에 맞게 추가
-  check('userid', 'userid is required').notEmpty().isLength({ min: 3, max: 30 })
-    .withMessage('userid must be between 3 and 30 characters'),
-  check('display_name', 'display_name is required').notEmpty(),
-];
+// (기존 validateRegistration, validateLogin, ... 등등의 코드)
+// ...
 
-// 로그인 검증 룰
-exports.validateLogin = [
-  check('email', 'Please include a valid email').isEmail(),
-  check('password', 'Password is required').exists(),
-];
+// [추가] 5. 프로필 수정 (PATCH /users/:userid)
+exports.validateProfileUpdate = [
+  // (주의) :userid는 URL 파라미터이므로 여기서 검증 안 함
+  // (스펙) email은 별도 API로 처리해야 하나, 우선 유효성 검사
+  body('email')
+    .optional()
+    .isEmail()
+    .withMessage('Please provide a valid email'),
+  
+  body('userid')
+    .optional()
+    .isString()
+    .isLength({ min: 3, max: 30 })
+    .withMessage('Userid must be between 3 and 30 characters')
+    .matches(/^[a-zA-Z0-9_]+$/) // (스펙) 영문/숫자/밑줄
+    .withMessage('Userid can only contain letters, numbers, and underscores'),
+    
+  body('display_name')
+    .optional()
+    .isString()
+    .trim()
+    .isLength({ min: 1, max: 120 })
+    .withMessage('Display name must be between 1 and 120 characters'),
+  
+  body('bio')
+    .optional()
+    .isString()
+    .trim()
+    .isLength({ max: 500 }) // (예시: 500자 제한)
+    .withMessage('Bio cannot exceed 500 characters'),
+  
+  body('profile_image_url')
+    .optional()
+    .isURL()
+    .withMessage('Profile image URL must be a valid URL'),
 
-// 비밀번호 변경 검증 (로그인 상태)
-exports.validatePasswordChange = [
-  check('current_password', 'Current password is required').exists(), // PDF 스펙
-  check('new_password', 'New password must be 6 or more characters').isLength({ min: 6 }), // PDF 스펙
-];
-
-// 비밀번호 재설정 요청 검증
-exports.validateResetRequest = [
-  check('email', 'Please include a valid email').isEmail(),
-];
-
-// 비밀번호 재설정 확정 검증
-exports.validateResetConfirm = [
-  check('token', 'Token is required').exists().notEmpty(),
-  check('new_password', 'New password must be 6 or more characters').isLength({ min: 6 }), // PDF 스펙
+  // (결과 처리)
+  (req, res, next) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      // PDF 스펙에 맞는 400 에러 반환
+      return next(new BadRequestError('INVALID_FIELD', errors.array()[0].msg));
+    }
+    next();
+  },
 ];

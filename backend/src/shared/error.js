@@ -21,6 +21,13 @@ class UnauthorizedError extends ApiError {
   }
 }
 
+// 403 Forbidden (권한 없음)
+class ForbiddenError extends ApiError {
+  constructor(code = 'FORBIDDEN', message = 'Forbidden') {
+    super(403, code, message);
+  }
+}
+
 // 404 Not Found
 class NotFoundError extends ApiError {
   constructor(code = 'NOT_FOUND', message = 'Not Found') {
@@ -40,6 +47,7 @@ module.exports = {
   ApiError,
   BadRequestError,
   UnauthorizedError,
+  ForbiddenError, // [추가]
   NotFoundError,
   ConflictError,
 };
