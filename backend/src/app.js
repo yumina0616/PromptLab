@@ -5,6 +5,7 @@ const passport = require('passport');
 const setupPassport = require('./modules/auth/passport'); // (변경) ./modules/auth/passport
 const mainRouter = require('./routes'); // (변경) ./routes
 const { ApiError, NotFoundError } = require('./shared/error'); // (변경) ./shared/error
+const workspaceRouter = require('./modules/workspaces/workspaces.router');
 
 const app = express();
 
@@ -19,6 +20,11 @@ setupPassport(passport);
 
 // --- 베이스 URL /api/v1로 변경 ---
 app.use('/api/v1', mainRouter);
+
+app.use('/api/v1/auth', authRouter);
+app.use('/api/v1/users', userRouter);
+app.use('/api/v1/prompts', promptRouter);
+app.use('/api/v1/workspaces', workspaceRouter);
 
 // 404 처리 미들웨어
 app.use((req, res, next) => {
