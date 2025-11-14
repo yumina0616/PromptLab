@@ -129,7 +129,7 @@ exports.getWorkspaceDetail = async (workspaceId) => {
 
     // 생성자 정보 로드
     const [creatorRows] = await pool.execute(
-    'SELECT id, userid FROM users WHERE id = ?',
+    'SELECT id, userid FROM user WHERE id = ?',
     [workspace.created_by]
     );
     const createdByUser = creatorRows[0] || null;
@@ -241,7 +241,7 @@ exports.getMemberList = async (workspaceId) => {
         FROM 
             workspace_members wm
         JOIN 
-            users u ON wm.user_id = u.id
+            user u ON wm.user_id = u.id
         WHERE 
             wm.workspace_id = ?
         ORDER BY 
@@ -485,9 +485,9 @@ exports.getSharedPromptList = async (workspaceId, pagination) => {
         JOIN 
             prompts p ON wp.prompt_id = p.id
         JOIN 
-            users u ON p.owner_id = u.id
+            user u ON p.owner_id = u.id
         JOIN 
-            users u_added ON wp.added_by = u_added.id
+            user u_added ON wp.added_by = u_added.id
         LEFT JOIN 
             prompt_versions v ON p.latest_version_id = v.id
         WHERE 

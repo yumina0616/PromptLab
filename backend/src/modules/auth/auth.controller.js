@@ -73,20 +73,11 @@ const authController = {
 
   // POST /refresh
 
+// POST /refresh
   refresh: async (req, res, next) => {
     try {
-      // 1) Body에서 먼저 찾아보고
-      const tokenFromBody =
-        req.body && (req.body.refresh_token || req.body.refreshToken);
-
-      // 2) 쿠키에서도 시도 (있으면 사용)
-      const tokenFromCookie =
-        req.cookies && (req.cookies.refresh_token || req.cookies.refreshToken);
-
-      // 3) 헤더에서도 받을 수 있게 여유 (선택)
-      const tokenFromHeader = req.headers['x-refresh-token'];
-
-      const token = tokenFromBody || tokenFromCookie || tokenFromHeader;
+      // 1순위: Body, 2순위: 쿠키
+      const token = req.body.refresh_token || req.cookies.refresh_token;
 
       if (!token) {
         throw new UnauthorizedError('INVALID_REFRESH_TOKEN', 'No refresh token provided');
@@ -94,7 +85,6 @@ const authController = {
 
       const data = await authService.refresh(token);
 
-      // (PDF 스펙)
       res.status(200).json({
         access_token: data.accessToken,
         expires_in: data.expiresIn,
@@ -103,6 +93,7 @@ const authController = {
       next(error);
     }
   },
+
 
 
   // POST /logout
