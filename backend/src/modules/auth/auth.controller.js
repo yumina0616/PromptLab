@@ -231,16 +231,17 @@ const authController = {
       const errors = validationResult(req);
       if (!errors.isEmpty()) throw new BadRequestError('VALIDATION_ERROR', errors.array()[0].msg);
       
-      const userId = req.user.id;
-      const { current_password, new_password } = req.body;
-      await authService.changePassword(userId, current_password, new_password);
+      const { email } = req.user; // ★ 이메일 꺼내기
+      const { currentPassword, newPassword } = req.body; // camelCase
       
-      // (PDF 스펙)
+      await authService.changePassword(email, currentPassword, newPassword);
+      
       res.status(204).send();
     } catch (error) {
       next(error);
     }
   },
+
 
   requestPasswordReset: async (req, res, next) => {
     try {

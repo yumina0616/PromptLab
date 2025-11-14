@@ -218,6 +218,8 @@ const usersController = {
    * GET /users/:userid/favorites
    */
   getFavorites: async (req, res, next) => {
+    console.log('[getFavorites] req.user =', req.user);
+    console.log('[getFavorites] params.userid =', req.params.userid);
     try {
       const { userid } = req.params;
       const loggedInUser = req.user; // (optionalAuth)

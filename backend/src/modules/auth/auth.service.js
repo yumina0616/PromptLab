@@ -125,9 +125,11 @@ const authService = {
   /**
    * 비밀번호 변경 (Change Password)
    */
-  changePassword: async (userId, currentPassword, newPassword) => {
-    const user = await userService.getUserByEmailWithPassword(userId); // (ID로 찾아야 함, 함수 재활용)
-    if (!user.password) {
+// 수정 버전
+  changePassword: async (email, currentPassword, newPassword) => {
+    // 이메일로 유저 + 패스워드 가져오기
+    const user = await userService.getUserByEmailWithPassword(email);
+    if (!user || !user.password) {
       throw new BadRequestError('OAUTH_USER', 'OAuth users cannot change password this way.');
     }
 
@@ -138,8 +140,11 @@ const authService = {
 
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(newPassword, salt);
-    await userService.updatePassword(userId, hashedPassword);
+
+    // 여기서는 user.id 사용
+    await userService.updatePassword(user.id, hashedPassword);
   },
+
 
   /**
    * 비밀번호 재설정 요청 (Reset Request)
