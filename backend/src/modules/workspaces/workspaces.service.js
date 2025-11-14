@@ -3,8 +3,8 @@ const { NotFoundError, ConflictError, BadRequestError } = require('../../shared/
 const uuid = require('uuid');
 const config = require('../../config');
 const { generateSlug } = require('../../shared/utils');
-const userService = require('../user/user.service');
-const emailService = require('../../shared/email');
+const userService = require('../users/users.service');
+const emailService = require('../auth/email');
 
 /**
  * 헬퍼 함수: DB 트랜잭션을 시작합니다.

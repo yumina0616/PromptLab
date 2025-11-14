@@ -1,4 +1,4 @@
-const workspaceService = require('./workspace.service');
+const workspaceService = require('./workspaces.service');
 const { validationResult } = require('express-validator');
 const { BadRequestError } = require('../../shared/error');
 const config = require('../../config');

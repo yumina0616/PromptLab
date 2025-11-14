@@ -6,6 +6,10 @@ const setupPassport = require('./modules/auth/passport'); // (변경) ./modules/
 const mainRouter = require('./routes'); // (변경) ./routes
 const { ApiError, NotFoundError } = require('./shared/error'); // (변경) ./shared/error
 const workspaceRouter = require('./modules/workspaces/workspaces.router');
+const authRouter = require('./modules/auth/auth.router');
+const userRouter = require('./modules/users/users.router');
+const promptRouter = require('./modules/prompts/prompt.router');
+
 
 const app = express();
 
