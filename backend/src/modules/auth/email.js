@@ -1,22 +1,21 @@
 const nodemailer = require('nodemailer');
-const config = require('../../config'); // 수정된 config/index.js
+const config = require('../../config');
 
 let transporter;
 
-// [수정] config.email 객체가 존재하는 경우(즉, .env에 설정된 경우)에만
-// nodemailer transporter를 초기화합니다.
+// 이메일 설정이 있는 경우에만 초기화
 if (config.email) {
   transporter = nodemailer.createTransport({
     host: config.email.host,
     port: config.email.port,
-    secure: config.email.port === 465, // true for 465, false for other ports
+    secure: config.email.port === 465 ? true : false, // gmail 587 → false
     auth: {
       user: config.email.user,
       pass: config.email.pass,
     },
   });
 
-  // (연결 테스트)
+  // 연결 테스트 (서버는 죽지 않음)
   transporter.verify((error, success) => {
     if (error) {
       console.warn('[Email] Nodemailer verification failed:', error.message);
@@ -26,63 +25,55 @@ if (config.email) {
   });
 
 } else {
-  // [수정] .env에 이메일 설정이 없으면, 경고만 띄우고 서버는 죽지 않음
-  console.warn('[Email] Email config (EMAIL_HOST, etc.) missing in .env. Email features will be disabled.');
+  console.warn('[Email] Email config missing in .env. Email features disabled.');
 }
 
-/**
- * (공통) 이메일 발송 헬퍼
- */
+// 공통 sendEmail
 const sendEmail = async (to, subject, text, html) => {
-  // [수정] transporter가 초기화되지 않았으면 (설정이 없으면) 에러
   if (!transporter) {
-    console.error('[Email] Attempted to send email, but email service is not configured.');
-    // (중요) 서버가 죽지 않고, 에러만 throw
-    // 이 에러는 auth.service.js가 받아서 처리함
+    console.error('[Email] Attempted to send email but service is not configured.');
     throw new Error('Email service is not configured on this server.');
   }
 
   try {
     await transporter.sendMail({
-      from: config.email.from, // "Prompthub" <no-reply@prompthub.com>
-      to: to,
-      subject: subject,
-      text: text,
-      html: html,
+      from: config.email.from,
+      to,
+      subject,
+      text,
+      html,
     });
+
     console.log(`[Email] Sent to: ${to} | Subject: ${subject}`);
   } catch (error) {
     console.error('[Email] Error sending email:', error);
-    throw error; // 에러를 상위 서비스(auth.service)로 전달
+    throw error;
   }
 };
 
-/**
- * (비밀번호 재설정)
- */
+// 비밀번호 재설정 이메일
 const sendPasswordResetEmail = async (to, token) => {
   const resetUrl = `${config.appUrl}/reset-password?token=${token}`;
-  
-  const subject = 'Prompthub 비밀번호 재설정 요청';
-  const text = `비밀번호를 재설정하려면 다음 링크를 클릭하세요: ${resetUrl}`;
-  const html = `<p>비밀번호를 재설정하려면 <a href="${resetUrl}">여기를 클릭</a>하세요. (1시간 동안 유효)</p>`;
 
-  await sendEmail(to, subject, text, html);
+  await sendEmail(
+    to,
+    'Prompthub 비밀번호 재설정 요청',
+    `비밀번호를 재설정하려면 다음 링크를 클릭하세요: ${resetUrl}`,
+    `<p>비밀번호를 재설정하려면 <a href="${resetUrl}">여기를 클릭</a>하세요. (1시간 동안 유효)</p>`
+  );
 };
 
-/**
- * (이메일 변경)
- */
+// 이메일 변경 확인
 const sendEmailChangeVerification = async (to, token) => {
   const verifyUrl = `${config.appUrl}/verify-email?token=${token}`;
-  
-  const subject = 'Prompthub 이메일 주소 변경 확인';
-  const text = `새 이메일 주소를 확인하려면 다음 링크를 클릭하세요: ${verifyUrl}`;
-  const html = `<p>새 이메일 주소를 확인하려면 <a href="${verifyUrl}">여기를 클릭</a>하세요. (1시간 동안 유효)</p>`;
 
-  await sendEmail(to, subject, text, html);
+  await sendEmail(
+    to,
+    'Prompthub 이메일 주소 변경 확인',
+    `새 이메일 주소를 확인하려면 다음 링크를 클릭하세요: ${verifyUrl}`,
+    `<p>새 이메일 주소를 확인하려면 <a href="${verifyUrl}">여기를 클릭</a>하세요. (1시간 동안 유효)</p>`
+  );
 };
-
 
 module.exports = {
   sendPasswordResetEmail,

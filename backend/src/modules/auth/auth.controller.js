@@ -1,5 +1,14 @@
 const authService = require('./auth.service');
+const userService = require('../users/users.service'); // UserService 추가
+const jwt = require('jsonwebtoken'); // jwt 추가 (토큰 생성용)
 const config = require('../../config');
+const generateAccessToken = (userId) => {
+  return jwt.sign({ id: userId }, config.jwt.secret, { expiresIn: config.jwt.accessTtl });
+};
+
+const generateRefreshToken = (userId) => {
+  return jwt.sign({ id: userId }, config.jwt.refreshSecret, { expiresIn: config.jwt.refreshTtl });
+};
 const { validationResult } = require('express-validator');
 const { BadRequestError, ApiError } = require('../../shared/error');
 const passport = require('passport');
@@ -149,7 +158,7 @@ const authController = {
       const { provider } = req.params;
       if (!['google', 'github'].includes(provider)) {
         throw new BadRequestError('INVALID_PROVIDER', 'Invalid provider');
-      }
+      }                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       
       await authService.unlinkOauth(userId, provider);
       
       // (PDF 스펙)
@@ -157,6 +166,58 @@ const authController = {
     } catch (error) {
       next(error);
     }
+  },
+
+  // 3. OAuth (누락된 함수 및 콜백 수정)
+
+  // (라우터 39줄에서 요구함) - 기존의 주석 /* (googleCallback과 동일) */을 대체
+  githubCallback: async (req, res, next) => { 
+    try {
+      if (!req.user) throw new ApiError('OAUTH_AUTH_FAILED', 'GitHub authentication failed');
+      
+      const user = req.user;
+      const accessToken = generateAccessToken(user.id);
+      const refreshToken = generateRefreshToken(user.id);
+      await userService.updateRefreshToken(user.id, refreshToken);
+      
+      setRefreshTokenCookie(res, refreshToken);
+      // (PDF 스펙) 프론트 콜백으로 리다이렉트 (토큰 전달)
+      res.redirect(`${config.appUrl}/auth/callback?access_token=${accessToken}&expires_in=${config.jwt.accessTtl}`);
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  // (라우터 48줄에서 요구함) - 이전 에러의 진짜 원인
+  linkOauthStart: (req, res, next) => {
+    // protect 미들웨어를 통과했으므로 실제 passport 미들웨어를 실행합니다.
+    const { provider } = req.params;
+
+    if (provider === 'google') {
+      passport.authenticate('google', { scope: ['profile', 'email'], session: false })(req, res, next);
+    } else if (provider === 'github') {
+      passport.authenticate('github', { scope: ['read:user', 'user:email'], session: false })(req, res, next);
+    } else {
+      next(new BadRequestError('INVALID_PROVIDER', 'Invalid provider'));
+    }
+  },
+
+
+  // 5. Profile & Session (라우터 52/53줄에서 요구하는 이름으로 통일)
+
+  // (라우터 52줄에서 요구함)
+  getProfile: (req, res) => {
+    // req.user는 protect 미들웨어에서 JWT Payload 정보를 담고 있습니다.
+    res.status(200).json(req.user);
+  },
+
+  // (라우터 53줄에서 요구함)
+  checkSession: (req, res) => {
+    // protect 미들웨어 통과 후 실행
+    res.status(200).json({ 
+      is_valid: true,
+      user: req.user // 사용자 정보를 함께 반환
+    });
   },
 
   // --- Password Management ---
