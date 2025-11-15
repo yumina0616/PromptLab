@@ -30,13 +30,10 @@ app.use(function(req, res, next){
 
 
 app.get('/health', function(req,res){ res.json({ ok:true }); });
-app.use('/api/v1/prompts', promptRouter);
 app.use('/api/v1/playground', playgroundRouter);
 app.use('/api/v1/models', modelRouter);
 
-app.use(function(err, req, res, next){
-  console.error('❌ Error middleware:', err);
-  res.status(err.status || 500).json({ error: err.message });
+
 // Passport.js 초기화
 app.use(passport.initialize());
 setupPassport(passport); 

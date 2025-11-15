@@ -1,11 +1,12 @@
 // shared/db.js
-const mysql = require('mysql2')
-const config = require('../config');
+const mysql = require('mysql2');
+// const config = require('../config'); // ◀ (삭제) DATABASE_URL을 안 쓰므로 config 불필요
 
 const dbPort = process.env.DB_PORT
   ? parseInt(process.env.DB_PORT, 10)
   : 3306;
 
+// ▼▼▼ 1. 첫 번째 'pool' 정의 (이것을 사용) ▼▼▼
 const pool = mysql.createPool({
   host: process.env.DB_HOST,
   port: dbPort,
@@ -14,9 +15,11 @@ const pool = mysql.createPool({
   database: process.env.DB_NAME,
   connectionLimit: 10,
   charset: 'utf8mb4',
+  waitForConnections: true, // (추가) 연결 풀 옵션
+  queueLimit: 0,           // (추가) 연결 풀 옵션
 });
 
-// 연결 테스트
+// ▼▼▼ 2. 연결 테스트 (이것도 사용) ▼▼▼
 pool.getConnection((err, conn) => {
   if (err) {
     console.error('❌ DB 연결 풀 생성 오류:', err.message);
@@ -24,34 +27,20 @@ pool.getConnection((err, conn) => {
     console.log('🚀 DB 연결 풀 생성 및 테스트 성공!');
     conn.release();
   }
+}); // ◀ (수정) 닫는 괄호 ');' 추가
 
-
+/*
+// ▼▼▼ 3. 두 번째 'pool' 정의와 관련된 코드는 전부 삭제 ▼▼▼
 
 // [수정] mysql2/promise는 URL을 바로 썼지만,
-// mysql2는 개별 옵션을 분리해야 합니다.
-// DATABASE_URL에서 값을 파싱합니다. (예: mysql://user:pass@host:port/db)
-let dbOptions = {};
-try {
-  const dbUrl = new URL(config.databaseUrl);
-  dbOptions = {
-    host: dbUrl.hostname,
-    port: dbUrl.port,
-    user: dbUrl.username,
-    password: dbUrl.password,
-    database: dbUrl.pathname.slice(1), // 맨 앞의 '/' 제거
-  };
-} catch (e) {
-  console.error("Invalid DATABASE_URL. Trying individual env vars.");
-  // (대체 옵션: 개별 .env 변수가 있다면 사용)
-  // dbOptions = { ... }
-}
-
+// ... (이하 51줄까지의 모든 코드 삭제) ...
 const pool = mysql.createPool({
   ...dbOptions,
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
 });
+*/
 
 // [중요]
 // 이 pool은 기본적으로 "Callback" 방식입니다.
