@@ -17,8 +17,8 @@ function httpError(status, msg) {
 const providerMap = {
   google: geminiProvider,
   openai: openaiProvider,
-  anthropic: anthropicProvider,
-  ollama: ollamaProvider,
+  //anthropic: anthropicProvider,
+  //ollama: ollamaProvider,
 };
 
 // 1) 모델 목록
