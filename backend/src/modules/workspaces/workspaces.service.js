@@ -1,0 +1,596 @@
+// 콜백 풀이 아니라 Promise 풀을 사용
+const pool = require('../../shared/db').promise();
+const { NotFoundError, ConflictError, BadRequestError, UnauthorizedError, } = require('../../shared/error');
+const uuid = require('uuid');
+const config = require('../../config');
+const { generateSlug } = require('../../shared/utils');
+const userService = require('../users/users.service');
+const emailService = require('../auth/email');
+
+/**
+ * 헬퍼 함수: DB 트랜잭션을 시작합니다.
+ */
+const beginTransaction = async () => {
+    const conn = await pool.getConnection();
+    await conn.beginTransaction();
+    return conn;
+};
+
+// --- 1. Workspace (기본 CRUD) ---
+
+/**
+ * 워크스페이스를 생성하고, 생성자를 멤버로 추가합니다. (스펙 1)
+ */
+exports.createWorkspace = async (data, userId) => {
+    const conn = await beginTransaction();
+    try {
+        // 1. Slug 처리 (미지정 시 생성, 중복 체크)
+        let slug = data.slug || generateSlug(data.name);
+        
+        // 2. Slug 중복 체크 (전역 유니크)
+        const [existing] = await conn.query('SELECT id FROM workspaces WHERE slug = ?', [slug]);
+        if (existing.length > 0) {
+            throw new ConflictError('SLUG_TAKEN', 'Workspace slug is already taken.');
+        }
+
+        // 3. 워크스페이스 생성
+        const [result] = await conn.execute(
+            'INSERT INTO workspaces (kind, name, slug, created_by) VALUES (?, ?, ?, ?)',
+            [data.kind, data.name, slug, userId]
+        );
+        const workspaceId = result.insertId;
+
+        // 4. 생성자를 멤버로 추가 (역할: admin)
+        await conn.execute(
+            'INSERT INTO workspace_members (workspace_id, user_id, role) VALUES (?, ?, ?)',
+            [workspaceId, userId, 'admin']
+        );
+
+        await conn.commit();
+        
+        return {
+            id: workspaceId,
+            kind: data.kind,
+            name: data.name,
+            slug: slug,
+            created_by: userId,
+        };
+    } catch (error) {
+        await conn.rollback();
+        throw error;
+    } finally {
+        conn.release();
+    }
+};
+
+/**
+ * 사용자가 속한 워크스페이스 목록을 조회합니다. (스펙 2)
+ */
+/**
+ * 사용자가 속한 워크스페이스 목록을 조회합니다. (스펙 2)
+ */
+exports.getMyWorkspaces = async (userId, pagination) => {
+  if (!userId) {
+    throw new UnauthorizedError('UNAUTHORIZED', 'User id is missing');
+  }
+
+  const q = pagination.q ? `%${pagination.q}%` : '%';
+  const sortField = pagination.sort === 'name' ? 'w.name' : 'wm.joined_at';
+
+  const page = Number(pagination.page) || 1;
+  const limit = Number(pagination.limit) || 20;
+  const offset = (page - 1) * limit;
+
+  // ⚠️ LIMIT / OFFSET 은 문자열로 직접 넣어줌
+  const query = `
+    SELECT 
+      w.id, w.kind, w.name, w.slug, wm.role
+    FROM 
+      workspace_members wm
+    JOIN 
+      workspaces w ON wm.workspace_id = w.id
+    WHERE 
+      wm.user_id = ? AND w.name LIKE ?
+    ORDER BY 
+      ${sortField} DESC
+    LIMIT ${limit} OFFSET ${offset}
+  `;
+
+  // ? 는 userId, q 두 개만 남김
+  const [items] = await pool.execute(query, [userId, q]);
+
+  const countSql = `
+    SELECT COUNT(w.id) AS total
+    FROM workspace_members wm
+    JOIN workspaces w ON wm.workspace_id = w.id
+    WHERE wm.user_id = ? AND w.name LIKE ?
+  `;
+  const [countRows] = await pool.execute(countSql, [userId, q]);
+  const total = countRows[0]?.total || 0;
+
+  return {
+    items,
+    page,
+    limit,
+    total,
+  };
+};
+
+/**
+ * 워크스페이스 상세 정보를 조회합니다. (스펙 3)
+ */
+exports.getWorkspaceDetail = async (workspaceId) => {
+    const [workspaces] = await pool.execute(
+        'SELECT id, kind, name, slug, created_by, created_at FROM workspaces WHERE id = ?',
+        [workspaceId]
+    );
+    const workspace = workspaces[0];
+    if (!workspace) return null;
+
+    // 생성자 정보 로드
+    const [creatorRows] = await pool.execute(
+    'SELECT id, userid FROM user WHERE id = ?',
+    [workspace.created_by]
+    );
+    const createdByUser = creatorRows[0] || null;
+
+    // 멤버 수
+    const [[{ memberCount }]] = await pool.query('SELECT COUNT(*) AS memberCount FROM workspace_members WHERE workspace_id = ?', [workspaceId]);
+
+    // 공유 프롬프트 수
+    const [[{ promptCount }]] = await pool.query('SELECT COUNT(*) AS promptCount FROM workspace_prompts WHERE workspace_id = ?', [workspaceId]);
+
+    return {
+        ...workspace,
+        created_by: createdByUser ? { id: createdByUser.id, userid: createdByUser.userid } : null,
+        members: { count: memberCount },
+        prompts: { count: promptCount },
+    };
+};
+
+/**
+ * 워크스페이스 정보를 수정합니다. (스펙 4)
+ */
+exports.updateWorkspace = async (workspaceId, data) => {
+    const conn = await beginTransaction();
+    try {
+        const updates = [];
+        const values = [];
+
+        if (data.name) {
+            updates.push('name = ?');
+            values.push(data.name);
+        }
+
+        if (data.slug) {
+            // Slug 중복 체크
+            const [existing] = await conn.query('SELECT id FROM workspaces WHERE slug = ? AND id != ?', [data.slug, workspaceId]);
+            if (existing.length > 0) {
+                throw new ConflictError('SLUG_TAKEN', 'Workspace slug is already taken.');
+            }
+            updates.push('slug = ?');
+            values.push(data.slug);
+        }
+
+        if (updates.length === 0) {
+            throw new BadRequestError('NO_CHANGES', 'No fields to update.');
+        }
+
+        const query = `UPDATE workspaces SET ${updates.join(', ')} WHERE id = ?`;
+        await conn.execute(query, [...values, workspaceId]);
+
+        const [updated] = await conn.execute('SELECT id, name, slug FROM workspaces WHERE id = ?', [workspaceId]);
+
+        await conn.commit();
+        return updated[0];
+    } catch (error) {
+        await conn.rollback();
+        throw error;
+    } finally {
+        conn.release();
+    }
+};
+
+/**
+ * 워크스페이스를 삭제합니다. (스펙 5)
+ */
+exports.deleteWorkspace = async (workspaceId) => {
+    const conn = await beginTransaction();
+    try {
+        // 연쇄 삭제 (CASCADE)를 가정하고, 워크스페이스만 삭제
+        // (workspace_members, workspace_invites, workspace_prompts가 연쇄 삭제되어야 함)
+        const [result] = await conn.execute('DELETE FROM workspaces WHERE id = ?', [workspaceId]);
+        if (result.affectedRows === 0) {
+            throw new NotFoundError('WORKSPACE_NOT_FOUND', 'Workspace not found.');
+        }
+        await conn.commit();
+    } catch (error) {
+        await conn.rollback();
+        throw error;
+    } finally {
+        conn.release();
+    }
+};
+
+// --- 2. Members (멤버 관리) ---
+
+/**
+ * 워크스페이스의 멤버 역할을 조회합니다.
+ */
+exports.getMemberRole = async (workspaceId, userId) => {
+    // 개인 워크스페이스의 경우, 생성자는 항상 admin/owner 역할이라고 가정
+    const [workspace] = await pool.execute('SELECT id, kind, created_by FROM workspaces WHERE id = ?', [workspaceId]);
+    if (workspace.length > 0 && workspace[0].kind === 'personal' && workspace[0].created_by === userId) {
+        return 'admin';
+    }
+
+    const [member] = await pool.execute(
+        'SELECT role FROM workspace_members WHERE workspace_id = ? AND user_id = ?',
+        [workspaceId, userId]
+    );
+    return member.length > 0 ? member[0].role : null;
+};
+
+/**
+ * 멤버 목록을 조회합니다. (스펙 6)
+ */
+exports.getMemberList = async (workspaceId) => {
+    const query = `
+        SELECT 
+            wm.role, wm.joined_at, u.id, u.userid, u.display_name
+        FROM 
+            workspace_members wm
+        JOIN 
+            user u ON wm.user_id = u.id
+        WHERE 
+            wm.workspace_id = ?
+        ORDER BY 
+            wm.role DESC, wm.joined_at ASC
+    `;
+    const [rows] = await pool.execute(query, [workspaceId]);
+
+    return rows.map(row => ({
+        user: {
+            id: row.id,
+            userid: row.userid,
+            display_name: row.display_name
+        },
+        role: row.role,
+        joined_at: row.joined_at
+    }));
+};
+
+/**
+ * 멤버를 직접 추가합니다. (스펙 7)
+ */
+exports.addMember = async (workspaceId, email, role) => {
+    const conn = await beginTransaction();
+    try {
+        // 1. 이메일로 사용자 찾기
+        const user = await userService.getUserByEmail(email);
+        if (!user) {
+            throw new NotFoundError('USER_NOT_FOUND', 'User with this email does not exist.');
+        }
+
+        // 2. 이미 멤버인지 확인
+        const [existing] = await conn.execute(
+            'SELECT 1 FROM workspace_members WHERE workspace_id = ? AND user_id = ?',
+            [workspaceId, user.id]
+        );
+        if (existing.length > 0) {
+            throw new ConflictError('ALREADY_MEMBER', 'User is already a member of this workspace.');
+        }
+
+        // 3. 멤버 추가
+        await conn.execute(
+            'INSERT INTO workspace_members (workspace_id, user_id, role) VALUES (?, ?, ?)',
+            [workspaceId, user.id, role]
+        );
+
+        await conn.commit();
+        return { workspace_id: workspaceId, user_id: user.id, role };
+    } catch (error) {
+        await conn.rollback();
+        throw error;
+    } finally {
+        conn.release();
+    }
+};
+
+/**
+ * 멤버 역할을 변경합니다. (스펙 8)
+ */
+exports.updateMemberRole = async (workspaceId, targetUserId, newRole) => {
+    const [result] = await pool.execute(
+        'UPDATE workspace_members SET role = ? WHERE workspace_id = ? AND user_id = ?',
+        [newRole, workspaceId, targetUserId]
+    );
+    if (result.affectedRows === 0) {
+        throw new NotFoundError('MEMBER_NOT_FOUND', 'User is not a member of this workspace.');
+    }
+    return { workspace_id: workspaceId, user_id: targetUserId, role: newRole };
+};
+
+/**
+ * 멤버를 제거합니다. (스펙 9)
+ */
+exports.removeMember = async (workspaceId, targetUserId) => {
+    const [result] = await pool.execute(
+        'DELETE FROM workspace_members WHERE workspace_id = ? AND user_id = ?',
+        [workspaceId, targetUserId]
+    );
+    if (result.affectedRows === 0) {
+        throw new NotFoundError('MEMBER_NOT_FOUND', 'User is not a member of this workspace.');
+    }
+};
+
+// --- 3. Invites (초대) ---
+
+/**
+ * 초대를 발송합니다. (스펙 10)
+ */
+exports.sendInvite = async (workspaceId, inviterId, email, role) => {
+    const conn = await beginTransaction();
+    try {
+        // 1. 이미 멤버인지 확인 (중복 초대 방지)
+        const user = await userService.getUserByEmail(email);
+        if (user) {
+            const [existingMember] = await conn.execute(
+                'SELECT 1 FROM workspace_members WHERE workspace_id = ? AND user_id = ?',
+                [workspaceId, user.id]
+            );
+            if (existingMember.length > 0) {
+                throw new ConflictError('ALREADY_MEMBER', 'User is already a member of this workspace.');
+            }
+        }
+
+        // 2. 토큰 생성 및 초대 레코드 저장
+        const token = uuid.v4();
+        await conn.execute(
+            'INSERT INTO workspace_invites (workspace_id, invited_by, invited_email, role, token, expires_at) VALUES (?, ?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL 7 DAY))',
+            [workspaceId, inviterId, email, role, token]
+        );
+
+        // 3. 이메일 전송 (실제 전송 대신 콘솔 출력)
+        const inviteUrl = `${config.appUrl}/workspace/invite?token=${token}`;
+        console.log(`[WORKSPACE INVITE] Send to ${email} for WS:${workspaceId}. Role: ${role}. Link: ${inviteUrl}`);
+        // await emailService.sendInviteEmail(email, inviteUrl, req.workspace.name);
+
+        await conn.commit();
+        return { token, status: 'pending', invited_email: email, role };
+    } catch (error) {
+        await conn.rollback();
+        throw error;
+    } finally {
+        conn.release();
+    }
+};
+
+/**
+ * 초대 목록을 조회합니다. (스펙 11)
+ */
+exports.getInviteList = async (workspaceId) => {
+    const [rows] = await pool.execute(
+        'SELECT invited_email, role, token, status FROM workspace_invites WHERE workspace_id = ? AND status = "pending"',
+        [workspaceId]
+    );
+    return rows;
+};
+
+/**
+ * 토큰으로 초대 정보를 조회합니다.
+ */
+exports.getInviteByToken = async (token) => {
+    const [invites] = await pool.execute(
+        'SELECT * FROM workspace_invites WHERE token = ? AND status = "pending" AND expires_at > NOW()',
+        [token]
+    );
+    return invites[0] || null;
+};
+
+/**
+ * 초대를 수락합니다. (스펙 12)
+ */
+exports.acceptInvite = async (token, userId) => {
+    const conn = await beginTransaction();
+    try {
+        const invite = await exports.getInviteByToken(token);
+        if (!invite) {
+            throw new BadRequestError('INVALID_OR_EXPIRED_TOKEN', 'Invitation is invalid or expired.');
+        }
+
+        // 1. 이미 멤버인지 확인 (경합 조건)
+        const [existing] = await conn.execute(
+            'SELECT 1 FROM workspace_members WHERE workspace_id = ? AND user_id = ?',
+            [invite.workspace_id, userId]
+        );
+        if (existing.length > 0) {
+             // 이미 멤버라면 그냥 성공 처리
+             await conn.commit();
+             return { joined: true, workspace_id: invite.workspace_id, role: existing[0].role };
+        }
+
+        // 2. 멤버 테이블에 추가
+        await conn.execute(
+            'INSERT INTO workspace_members (workspace_id, user_id, role) VALUES (?, ?, ?)',
+            [invite.workspace_id, userId, invite.role]
+        );
+
+        // 3. 초대 상태 업데이트
+        await conn.execute(
+            'UPDATE workspace_invites SET status = "accepted" WHERE token = ?',
+            [token]
+        );
+
+        await conn.commit();
+        return { joined: true, workspace_id: invite.workspace_id, role: invite.role };
+    } catch (error) {
+        await conn.rollback();
+        throw error;
+    } finally {
+        conn.release();
+    }
+};
+
+/**
+ * 초대를 거절합니다. (스펙 12)
+ */
+exports.rejectInvite = async (token) => {
+    const [result] = await pool.execute(
+        'UPDATE workspace_invites SET status = "rejected" WHERE token = ? AND status = "pending"',
+        [token]
+    );
+    if (result.affectedRows === 0) {
+        throw new BadRequestError('INVALID_OR_EXPIRED_TOKEN', 'Invitation is invalid or expired.');
+    }
+    return { rejected: true };
+};
+
+/**
+ * 초대를 취소합니다. (스펙 13)
+ */
+exports.cancelInvite = async (token) => {
+    const [result] = await pool.execute(
+        'DELETE FROM workspace_invites WHERE token = ? AND status = "pending"',
+        [token]
+    );
+    if (result.affectedRows === 0) {
+        throw new NotFoundError('INVITE_NOT_FOUND', 'Active invitation not found.');
+    }
+};
+
+
+// --- 4. Shared Prompts (공유된 프롬프트) ---
+
+/**
+ * 공유된 프롬프트 목록을 조회합니다. (스펙 14)
+ */
+exports.getSharedPromptList = async (workspaceId, pagination) => {
+    const q = pagination.q ? `%${pagination.q}%` : '%';
+    const sortField = pagination.sort === 'name' ? 'p.name' : 'wp.added_at'; // recent: added_at 기준 정렬
+
+    // NOTE: prompt, prompt_version, prompt_owner(user) 테이블 조인 필요
+    const query = `
+        SELECT 
+            wp.role, wp.added_at, 
+            p.id AS prompt_id, p.name AS prompt_name, p.owner_id,
+            v.id AS latest_version_id, v.version_number, v.created_at AS version_created_at,
+            u.userid AS owner_userid, 
+            (SELECT COUNT(*) FROM prompt_stars ps WHERE ps.prompt_id = p.id) AS stars,
+            (SELECT COUNT(*) FROM prompt_forks pf WHERE pf.original_prompt_id = p.id) AS forks,
+            (SELECT GROUP_CONCAT(t.name) FROM prompt_tags pt JOIN tags t ON pt.tag_id = t.id WHERE pt.prompt_id = p.id) AS tags_list,
+            u_added.userid AS added_by_userid
+        FROM 
+            workspace_prompts wp
+        JOIN 
+            prompts p ON wp.prompt_id = p.id
+        JOIN 
+            user u ON p.owner_id = u.id
+        JOIN 
+            user u_added ON wp.added_by = u_added.id
+        LEFT JOIN 
+            prompt_versions v ON p.latest_version_id = v.id
+        WHERE 
+            wp.workspace_id = ? AND p.name LIKE ?
+        ORDER BY 
+            ${sortField} DESC
+        LIMIT ? OFFSET ?
+    `;
+
+    const [rows] = await pool.execute(query, [
+        workspaceId, q, pagination.limit, (pagination.page - 1) * pagination.limit
+    ]);
+
+    const [[{ total }]] = await pool.query(
+        'SELECT COUNT(*) AS total FROM workspace_prompts wp JOIN prompts p ON wp.prompt_id = p.id WHERE wp.workspace_id = ? AND p.name LIKE ?',
+        [workspaceId, q]
+    );
+
+    return {
+        items: rows.map(row => ({
+            prompt: {
+                id: row.prompt_id,
+                name: row.prompt_name,
+                owner: { userid: row.owner_userid }
+            },
+            role: row.role,
+            added_by: { userid: row.added_by_userid },
+            added_at: row.added_at,
+            latest_version: {
+                id: row.latest_version_id,
+                version_number: row.version_number,
+                created_at: row.version_created_at
+            },
+            stars: row.stars,
+            forks: row.forks,
+            tags: row.tags_list ? row.tags_list.split(',') : [],
+        })),
+        page: pagination.page,
+        limit: pagination.limit,
+        total: total,
+    };
+};
+
+/**
+ * 프롬프트를 워크스페이스에 공유합니다. (스펙 15)
+ */
+exports.sharePrompt = async (workspaceId, promptId, sharerId, role) => {
+    const conn = await beginTransaction();
+    try {
+        // 1. 프롬프트 존재 및 소유자 확인 (제약: 프롬프트 소유자가 존재해야 함)
+        const [prompt] = await conn.execute('SELECT owner_id FROM prompts WHERE id = ?', [promptId]);
+        if (prompt.length === 0) {
+            throw new NotFoundError('PROMPT_NOT_FOUND', 'Prompt does not exist.');
+        }
+
+        // 2. 중복 추가 불가 체크
+        const [existing] = await conn.execute(
+            'SELECT 1 FROM workspace_prompts WHERE workspace_id = ? AND prompt_id = ?',
+            [workspaceId, promptId]
+        );
+        if (existing.length > 0) {
+            throw new ConflictError('ALREADY_SHARED', 'Prompt is already shared with this workspace.');
+        }
+
+        // 3. 공유 레코드 추가
+        await conn.execute(
+            'INSERT INTO workspace_prompts (workspace_id, prompt_id, role, added_by) VALUES (?, ?, ?, ?)',
+            [workspaceId, promptId, role, sharerId]
+        );
+
+        await conn.commit();
+        return { workspace_id: workspaceId, prompt_id: promptId, role };
+    } catch (error) {
+        await conn.rollback();
+        throw error;
+    } finally {
+        conn.release();
+    }
+};
+
+/**
+ * 공유된 프롬프트의 권한을 변경합니다. (스펙 16)
+ */
+exports.updateSharedPromptRole = async (workspaceId, promptId, newRole) => {
+    const [result] = await pool.execute(
+        'UPDATE workspace_prompts SET role = ? WHERE workspace_id = ? AND prompt_id = ?',
+        [newRole, workspaceId, promptId]
+    );
+    if (result.affectedRows === 0) {
+        throw new NotFoundError('SHARE_NOT_FOUND', 'Prompt is not shared with this workspace.');
+    }
+    return { workspace_id: workspaceId, prompt_id: promptId, role: newRole };
+};
+
+/**
+ * 프롬프트 공유를 해제합니다. (스펙 17)
+ */
+exports.unsharePrompt = async (workspaceId, promptId) => {
+    const [result] = await pool.execute(
+        'DELETE FROM workspace_prompts WHERE workspace_id = ? AND prompt_id = ?',
+        [workspaceId, promptId]
+    );
+    if (result.affectedRows === 0) {
+        throw new NotFoundError('SHARE_NOT_FOUND', 'Prompt is not shared with this workspace.');
+    }
+};

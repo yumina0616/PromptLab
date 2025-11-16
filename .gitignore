@@ -4,7 +4,6 @@ logs
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-<<<<<<< HEAD
 lerna-debug.log*
 
 # Diagnostic reports (https://nodejs.org/api/report.html)
@@ -67,22 +66,10 @@ web_modules/
 .yarn-integrity
 
 # dotenv environment variable files
-=======
-pnpm-debug.log*
-lerna-debug.log*
-
-node_modules
-dist
-dist-ssr
-*.local
-
-# Environment files
->>>>>>> a3b6436 (chore: 최초 셋업 및 UI 디자인 구현 완료)
 .env
 .env.*
 !.env.example
 
-<<<<<<< HEAD
 # parcel-bundler cache (https://parceljs.org/)
 .cache
 .parcel-cache
@@ -150,15 +137,3 @@ dist
 # Vite logs files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
-=======
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.idea
-.DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
->>>>>>> a3b6436 (chore: 최초 셋업 및 UI 디자인 구현 완료)
