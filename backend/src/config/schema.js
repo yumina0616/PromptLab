@@ -3,7 +3,7 @@ const { z } = require('zod');
 // CJS (require) 방식의 Zod 스키마
 const configSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
-  PORT: z.string().default('5000').transform(Number),
+  PORT: z.string().default('3000').transform(Number),
   APP_URL: z.string().url().default('http://localhost:3000'),
 
   // DB
