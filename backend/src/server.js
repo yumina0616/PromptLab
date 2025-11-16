@@ -3,7 +3,7 @@ const pool = require('./shared/db');
 
 const PORT = process.env.PORT || 3000;
 
-// DB 연결 확인
+// DB 연결 테스트
 pool.getConnection((err, conn) => {
   if (err) {
     console.error('MySQL Connection Error:', err.message);
