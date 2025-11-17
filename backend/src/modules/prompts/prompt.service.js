@@ -784,14 +784,14 @@ exports.listComments = function (userId, promptId, verId, q, done) {
       SELECT
         c.id,
         c.prompt_version_id,
-        c.user_id,
+        c.author_id,
         u.username,
         u.email,
         c.body,
         c.created_at
       FROM comment c
       JOIN prompt_version v ON v.id = c.prompt_version_id
-      JOIN user u ON u.id = c.user_id
+      JOIN user u ON u.id = c.author_id
       WHERE v.prompt_id = ? AND v.id = ?
       ORDER BY c.created_at DESC
       LIMIT ? OFFSET ?
