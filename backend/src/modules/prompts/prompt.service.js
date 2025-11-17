@@ -311,8 +311,8 @@ exports.listPrompts = function (userId, q, done) {
 
 
 // 3) 상세
-exports.getPrompt = function(userId, id, done){
-  pool.query('SELECT * FROM prompt WHERE id = ?', [id], function(err, rows){
+exports.getPrompt = function(userId, id, done) {
+  pool.query('SELECT * FROM prompt WHERE id = ?', [id], function(err, rows) {
     if (err) return done(err);
     if (!rows.length) return done(null, null);
     const p = rows[0];
@@ -320,30 +320,52 @@ exports.getPrompt = function(userId, id, done){
     pool.query(
       'SELECT t.name FROM prompt_tag pt JOIN tag t ON t.id=pt.tag_id WHERE pt.prompt_id = ?',
       [id],
-      function(err2, tags){
+      function(err2, tags) {
         if (err2) return done(err2);
 
-        function finish(latest){
-          done(null, {
-            id: p.id,
-            name: p.name,
-            description: p.description,
-            visibility: p.visibility,
-            tags: tags.map(t => t.name),
-            latest_version: latest
-          });
+        // latest_version 정보를 받아서 star_count까지 붙여서 응답을 완성하는 함수
+        function finish(latest) {
+          // ★ 여기서 favorite 카운트 조회
+          pool.query(
+            `
+            SELECT COUNT(*) AS cnt
+            FROM favorite f
+            JOIN prompt_version v ON v.id = f.prompt_version_id
+            WHERE v.prompt_id = ?
+            `,
+            [id],
+            function(err4, favRows) {
+              if (err4) return done(err4);
+
+              const starCount = favRows[0] ? Number(favRows[0].cnt) : 0;
+
+              done(null, {
+                id: p.id,
+                name: p.name,
+                description: p.description,
+                visibility: p.visibility,
+                tags: tags.map(t => t.name),
+                latest_version: latest,
+                star_count: starCount          // ★ 추가된 필드
+              });
+            }
+          );
         }
 
         if (p.latest_version_id) {
-          pool.query('SELECT id, version_number FROM prompt_version WHERE id = ?', [p.latest_version_id], function(err3, lv){
-            if (err3) return done(err3);
-            return finish(lv[0] || null);
-          });
+          pool.query(
+            'SELECT id, version_number FROM prompt_version WHERE id = ?',
+            [p.latest_version_id],
+            function(err3, lv) {
+              if (err3) return done(err3);
+              return finish(lv[0] || null);
+            }
+          );
         } else {
           pool.query(
             'SELECT id, version_number FROM prompt_version WHERE prompt_id = ? ORDER BY version_number DESC LIMIT 1',
             [id],
-            function(err3, lv){
+            function(err3, lv) {
               if (err3) return done(err3);
               return finish(lv[0] || null);
             }
