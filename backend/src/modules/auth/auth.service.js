@@ -109,18 +109,27 @@ const authService = {
   /**
    * 로그아웃 (Logout)
    */
+/**
+ * 로그아웃 (Logout)
+ */
   logout: async (refreshToken) => {
     // Refresh Token이 없으면 아무것도 안함
     if (!refreshToken) {
       return;
     }
-    const decoded = verifyRefreshToken(token);
-    if (decoded) {
-      // DB에서 Refresh Token을 무효화
-      await userService.updateRefreshToken(decoded.id, null);
+
+    const decoded = verifyRefreshToken(refreshToken);  // ✅ 올바른 변수 사용
+    if (!decoded) {
+      // 이미 만료/깨진 토큰이면 그냥 조용히 무시
+      return;
     }
-    // PDF 스펙 204를 위해 아무것도 반환 안함
+
+    // DB에서 Refresh Token을 무효화
+    await userService.updateRefreshToken(decoded.id, null);
+
+    // PDF 스펙 204용: 반환값 없음
   },
+
 
   /**
    * 비밀번호 변경 (Change Password)

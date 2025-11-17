@@ -2,7 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const morgan = require('morgan');
 require('dotenv').config();  // ✅ .env 로드
-
+const cookieParser = require('cookie-parser'); 
 const passport = require('passport');
 const setupPassport = require('./modules/auth/passport'); // (변경) ./modules/auth/passport
 const mainRouter = require('./routes'); // (변경) ./routes
@@ -21,6 +21,7 @@ const app = express();
 app.use(cors()); 
 app.use(morgan('dev'));
 app.use(express.json());
+app.use(cookieParser());   
 
 // 임시 로그인
 app.use(function(req, res, next){

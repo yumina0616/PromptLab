@@ -97,21 +97,31 @@ const authController = {
 
 
   // POST /logout
+
   logout: async (req, res, next) => {
     try {
-      const token = req.cookies.refresh_token;
-      await authService.logout(token);
-      
-      // 쿠키 삭제
-      res.cookie('refresh_token', '', { httpOnly: true, expires: new Date(0) });
-      
-      // (PDF 스펙)
-      res.status(204).send();
+      const refreshToken =
+        (req.cookies && req.cookies.refresh_token) ||
+        (req.body && req.body.refresh_token) ||
+        null;
+
+      if (refreshToken) {
+        await authService.logout(refreshToken);
+      }
+
+      res.cookie('refresh_token', '', {
+        httpOnly: true,
+        expires: new Date(0),
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+      });
+
+      return res.status(204).send();
     } catch (error) {
       next(error);
     }
   },
-  
+
   // GET /me
   getMe: (req, res, next) => {
     // protect 미들웨어에서 req.user에 이미 정보를 담아둠
