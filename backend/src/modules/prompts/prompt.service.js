@@ -134,83 +134,178 @@ exports.createPromptWithFirstVersion = function(userId, body, done){
   }, done);
 };
 
-// 2) 목록
-exports.listPrompts = function(userId, q, done){
-  const where = [];
-  const params = [];
+// 2) 프롬프트 목록 (검색 + 정렬 + 카테고리 + 태그 + owner)
+// src/modules/prompts/prompt.service.js
 
-  if (q && q.owner === 'me') { where.push('p.owner_id = ?'); params.push(userId); }
-  if (q && q.visibility) { where.push('p.visibility = ?'); params.push(q.visibility); }
-  if (q && q.q) { where.push('(p.name LIKE ? OR p.description LIKE ?)'); params.push('%'+q.q+'%', '%'+q.q+'%'); }
+exports.listPrompts = function (userId, q, done) {
+  try {
+    const where  = [];
+    const params = [];
 
-  const whereSql = where.length ? 'WHERE ' + where.join(' AND ') : '';
-  const orderSql = 'ORDER BY p.created_at DESC';
-  const limit = Number(q && q.limit ? q.limit : 20);
-  const page = Number(q && q.page ? q.page : 1);
-  const offset = (page - 1) * limit;
-
-  const sql = `
-    SELECT p.id, p.name, p.description, p.visibility, p.latest_version_id
-    FROM prompt p
-    ${whereSql}
-    ${orderSql}
-    LIMIT ? OFFSET ?`;
-
-  params.push(limit, offset);
-
-  pool.query(sql, params, function(err, rows){
-    if (err) return done(err);
-
-    // 태그/최신버전 붙이기(간단히 순차 조회)
-    let i = 0;
-    const items = [];
-    function next(){
-      if (i >= rows.length) return done(null, { items });
-      const row = rows[i++];
-
-      pool.query(
-        `SELECT t.name FROM prompt_tag pt JOIN tag t ON t.id=pt.tag_id WHERE pt.prompt_id = ?`,
-        [row.id],
-        function(err2, tagRows){
-          if (err2) return done(err2);
-
-          if (row.latest_version_id) {
-            pool.query('SELECT id, version_number FROM prompt_version WHERE id = ?', [row.latest_version_id], function(err3, lv){
-              if (err3) return done(err3);
-              items.push({
-                id: row.id,
-                name: row.name,
-                description: row.description,
-                visibility: row.visibility,
-                tags: tagRows.map(t => t.name),
-                latest_version: lv[0] || null
-              });
-              next();
-            });
-          } else {
-            pool.query(
-              'SELECT id, version_number FROM prompt_version WHERE prompt_id = ? ORDER BY version_number DESC LIMIT 1',
-              [row.id],
-              function(err3, lv){
-                if (err3) return done(err3);
-                items.push({
-                  id: row.id,
-                  name: row.name,
-                  description: row.description,
-                  visibility: row.visibility,
-                  tags: tagRows.map(t => t.name),
-                  latest_version: lv[0] || null
-                });
-                next();
-              }
-            );
-          }
-        }
-      );
+    // 1) owner 필터: owner=me
+    if (q && q.owner === 'me') {
+      if (!userId) return done(httpError(401, 'UNAUTHORIZED'));
+      where.push('p.owner_id = ?');
+      params.push(userId);
     }
-    next();
-  });
+
+    // 2) visibility 필터
+    if (q && q.visibility) {
+      where.push('p.visibility = ?');
+      params.push(q.visibility);
+    }
+
+    // 3) 검색어(q): 이름/설명 LIKE
+    if (q && q.q) {
+      where.push('(p.name LIKE ? OR p.description LIKE ?)');
+      params.push('%' + q.q + '%', '%' + q.q + '%');
+    }
+
+    // 4) 태그 필터: tag=dev
+    if (q && q.tag) {
+      where.push(
+        'EXISTS (' +
+        '  SELECT 1 FROM prompt_tag pt2' +
+        '  JOIN tag t2 ON t2.id = pt2.tag_id' +
+        '  WHERE pt2.prompt_id = p.id AND t2.name = ?' +
+        ')'
+      );
+      params.push(q.tag);
+    }
+
+    // 5) 카테고리 필터: category=dev
+    if (q && q.category) {
+      where.push(
+        'EXISTS (' +
+        '  SELECT 1 FROM prompt_version v2' +
+        '  WHERE v2.prompt_id = p.id AND v2.category_code = ?' +
+        ')'
+      );
+      params.push(q.category);
+    }
+
+    const whereSql = where.length ? ('WHERE ' + where.join(' AND ')) : '';
+
+    // 6) 정렬: sort=recent | stars | popular
+    const sort = (q && q.sort) ? String(q.sort) : 'recent';
+    let orderSql = 'ORDER BY p.created_at DESC';  // 기본: 최신순
+
+    if (sort === 'recent') {
+      orderSql = 'ORDER BY p.created_at DESC';
+    } else if (sort === 'stars' || sort === 'popular') {
+      // ⭐ 즐겨찾기 수 기준 내림차순(+ 생성일 보조 정렬)
+      orderSql = 'ORDER BY star_count DESC, p.created_at DESC';
+    } else {
+      return done(httpError(400, 'INVALID_SORT'));
+    }
+
+    // 7) 페이징
+    const limit  = Number(q && q.limit ? q.limit : 20);
+    const page   = Number(q && q.page  ? q.page  : 1);
+    const offset = (page - 1) * limit;
+
+    if (!Number.isFinite(limit) || limit <= 0 || limit > 100) {
+      return done(httpError(400, 'INVALID_LIMIT'));
+    }
+
+    // 8) 메인 리스트 쿼리
+    const sql = `
+      SELECT
+        p.id,
+        p.name,
+        p.description,
+        p.visibility,
+        p.latest_version_id,
+        -- ⭐ 인기(별점) 수: 이 프롬프트의 모든 버전에 달린 즐겨찾기 총합
+        (
+          SELECT COUNT(*)
+          FROM prompt_favorite f
+          JOIN prompt_version v ON v.id = f.prompt_version_id
+          WHERE v.prompt_id = p.id
+        ) AS star_count
+      FROM prompt p
+      ${whereSql}
+      ${orderSql}
+      LIMIT ? OFFSET ?
+    `;
+
+    const listParams = params.concat([limit, offset]);
+
+    pool.query(sql, listParams, function (err, rows) {
+      if (err) return done(err);
+
+      let i = 0;
+      const items = [];
+
+      function next() {
+        if (i >= rows.length) {
+          // 프론트로 나가는 응답 형태
+          return done(null, { items });
+        }
+
+        const row = rows[i++];
+
+        // 9) 태그 붙이기
+        pool.query(
+          `
+          SELECT t.name
+          FROM prompt_tag pt
+          JOIN tag t ON t.id = pt.tag_id
+          WHERE pt.prompt_id = ?
+          `,
+          [row.id],
+          function (err2, tagRows) {
+            if (err2) return done(err2);
+
+            const tags = tagRows.map(t => t.name);
+
+            // 10) latest_version 붙이기
+            const pushItem = (lvRow) => {
+              items.push({
+                id:           row.id,
+                name:         row.name,
+                description:  row.description,
+                visibility:   row.visibility,
+                tags,
+                latest_version: lvRow || null,
+                // ⭐ 여기서 star_count 응답에 포함
+                star_count: Number(row.star_count) || 0,
+              });
+            };
+
+            if (row.latest_version_id) {
+              pool.query(
+                'SELECT id, version_number FROM prompt_version WHERE id = ?',
+                [row.latest_version_id],
+                function (err3, lv) {
+                  if (err3) return done(err3);
+                  pushItem(lv[0]);
+                  next();
+                }
+              );
+            } else {
+              pool.query(
+                'SELECT id, version_number FROM prompt_version WHERE prompt_id = ? ORDER BY version_number DESC LIMIT 1',
+                [row.id],
+                function (err3, lv) {
+                  if (err3) return done(err3);
+                  pushItem(lv[0]);
+                  next();
+                }
+              );
+            }
+          }
+        );
+      }
+
+      next();
+    });
+  } catch (err) {
+    done(err);
+  }
 };
+
+
 
 // 3) 상세
 exports.getPrompt = function(userId, id, done){
