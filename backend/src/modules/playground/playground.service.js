@@ -523,3 +523,49 @@ exports.getSettings = function(userId, cb) {
 exports.updateSettings = function(userId, patch, cb) {
   cb(null, { updated: true });
 };
+
+exports.listCategories = (callback) => {
+    // 카테고리 테이블의 필드 이름이 code와 name_kr이라고 가정합니다.
+    const sql = `
+        SELECT code, name_kr
+        FROM category
+        ORDER BY name_kr
+    `;
+
+    // **중요:** 이전 'NaN' 에러를 막기 위해, 이 함수는 WHERE 절을 사용하지 않고
+    // 모든 카테고리를 조회합니다. 사용자별 필터링이 필요하다면 여기에 로직을 추가해야 합니다.
+    
+    db.query(sql, [], (err, results) => {
+        if (err) {
+            console.error('Error fetching categories:', err);
+            return callback(err);
+        }
+        // 결과를 그대로 반환합니다.
+        callback(null, results);
+    });
+};
+
+exports.listTags = (q, callback) => {
+    let sql = `
+        SELECT DISTINCT name 
+        FROM tag 
+    `;
+    const params = [];
+
+    if (q) {
+        // 검색어가 있으면 LIKE 쿼리를 추가하여 필터링합니다.
+        sql += ` WHERE name LIKE ?`;
+        params.push(`%${q}%`);
+    }
+
+    // 데이터베이스 쿼리 실행
+    db.query(sql, params, (err, results) => {
+        if (err) {
+            console.error('Error fetching tags:', err);
+            return callback(err);
+        }
+        // 결과에서 태그 이름만 추출하여 배열로 반환합니다.
+        const tags = results.map(row => row.name);
+        callback(null, tags);
+    });
+};
