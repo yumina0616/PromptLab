@@ -175,14 +175,17 @@ exports.listPrompts = function (userId, q, done) {
 
     // 5) 카테고리 필터: category=dev
     if (q && q.category) {
-      where.push(
-        'EXISTS (' +
-        '  SELECT 1 FROM prompt_version v2' +
-        '  WHERE v2.prompt_id = p.id AND v2.category_code = ?' +
-        ')'
-      );
-      params.push(q.category);
-    }
+  where.push(`
+    EXISTS (
+      SELECT 1
+      FROM prompt_version v2
+      JOIN category c ON c.id = v2.category_id
+      WHERE v2.prompt_id = p.id
+        AND c.code = ?
+    )
+  `);
+  params.push(q.category);
+}
 
     const whereSql = where.length ? ('WHERE ' + where.join(' AND ')) : '';
 
