@@ -785,7 +785,7 @@ exports.listComments = function (userId, promptId, verId, q, done) {
         c.id,
         c.prompt_version_id,
         c.author_id,
-        u.username,
+        u.user_name,
         u.email,
         c.body,
         c.created_at
