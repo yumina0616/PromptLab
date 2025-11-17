@@ -31,7 +31,7 @@ app.use(express.json());
 
 // 임시 로그인
 app.use(function(req, res, next){
-  req.user = { id: 1, is_admin: true };
+  req.user = { id: 3, is_admin: true };
   next();
 });
 
