@@ -148,13 +148,12 @@ exports.validatePasswordReset = [
     .notEmpty()
     .withMessage('Token is required'),
   
-  body('new_password')
+  body('new_password')                 // ✅ newPassword → new_password
     .isLength({ min: 8 })
     .withMessage('New password must be at least 8 characters long')
     .matches(/^(?=.*[a-zA-Z])(?=.*\d).{8,}$/)
     .withMessage('New password must be at least 8 characters and include letters and numbers'),
 
-  // (결과 처리)
   (req, res, next) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -163,3 +162,4 @@ exports.validatePasswordReset = [
     next();
   },
 ];
+
