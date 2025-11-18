@@ -105,6 +105,36 @@ function upsertTags(conn, promptId, tags, cb){
   next();
 }
 
+function ensurePromptViewer(userId, promptId, cb){
+  if (!userId) return cb(httpError(401, 'UNAUTHORIZED'));
+  // ★ 1. prompt의 owner_id와 visibility를 함께 가져옵니다.
+  pool.query('SELECT owner_id, visibility FROM prompt WHERE id = ?', [promptId], function(err, rows){
+    if (err) return cb(err);
+    if (!rows.length) return cb(httpError(404,'Prompt not found'));
+    
+    const p = rows[0];
+
+    // 2. 소유자(Owner)이거나 Public인 경우 즉시 허용
+    if (p.owner_id === userId) return cb(null, p.owner_id);
+    if (p.visibility === 'public') return cb(null, p.owner_id); // ⬅️ 추가된 로직
+
+    // 3. Private이고 워크스페이스 공유 확인 (이하 기존 로직)
+    pool.query(
+      `SELECT 1
+       FROM workspace_prompts wp
+       JOIN workspace_members wm ON wm.workspace_id = wp.workspace_id
+       WHERE wp.prompt_id = ? AND wm.user_id = ?
+       LIMIT 1`,
+      [promptId, userId],
+      function(err2, shared){
+        if (err2) return cb(err2);
+        if (!shared.length) return cb(httpError(403,'Forbidden'));
+        cb(null, p.owner_id); // rows[0].owner_id 대신 p.owner_id 사용
+      }
+    );
+  });
+}
+
 // 1) 프롬프트 + 첫 버전
 exports.createPromptWithFirstVersion = function(userId, body, done){
   withTx(function(conn, cb){
@@ -471,20 +501,23 @@ exports.deletePrompt = function(userId, id, done){
 
 // ===== 버전 =====
 exports.listVersions = function(userId, promptId, query, done){
-  ensurePromptViewer(userId, promptId, function(err){
-    if (err) return done(err);
+  ensurePromptViewer(userId, promptId, function(err){
+    if (err) return done(err);
 
-    const includeDraft = String((query && query.includeDraft) || '').toLowerCase() === 'true';
-    const sql = `
-      SELECT id, version_number, is_draft, commit_message, category_id, created_at
-      FROM prompt_version
-      WHERE prompt_id = ? ${includeDraft ? '' : 'AND is_draft = 0'}
-      ORDER BY version_number DESC`;
-    pool.query(sql, [promptId], function(err2, rows){
-      if (err2) return done(err2);
-      done(null, rows);
-    });
-  });
+    // 사용자님 규칙에 따라 is_draft는 항상 0이므로,
+    // includeDraft 쿼리 파라미터는 제거해도 무방하나, 
+    // 기존 로직을 최대한 유지하고 권한 검사만 강화합니다.
+    const includeDraft = String((query && query.includeDraft) || '').toLowerCase() === 'true';
+    const sql = `
+      SELECT id, version_number, is_draft, commit_message, category_id, created_at
+      FROM prompt_version
+      WHERE prompt_id = ? ${includeDraft ? '' : 'AND is_draft = 0'} 
+      ORDER BY version_number DESC`;
+    pool.query(sql, [promptId], function(err2, rows){
+      if (err2) return done(err2);
+      done(null, rows);
+    });
+  });
 };
 
 exports.createVersion = function(userId, promptId, body, done){
