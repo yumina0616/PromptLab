@@ -1,81 +1,39 @@
-const nodemailer = require('nodemailer');
+// backend/src/modules/auth/email.js
+const { Resend } = require('resend');
 const config = require('../../config');
 
-let transporter;
+const resend = new Resend(process.env.RESEND_API_KEY);
 
-// 이메일 설정이 있는 경우에만 초기화
-if (config.email) {
-  transporter = nodemailer.createTransport({
-    host: config.email.host,
-    port: config.email.port,
-    secure: config.email.port === 465 ? true : false, // gmail 587 → false
-    auth: {
-      user: config.email.user,
-      pass: config.email.pass,
-    },
-  });
-
-  // 연결 테스트 (서버는 죽지 않음)
-  transporter.verify((error, success) => {
-    if (error) {
-      console.warn('[Email] Nodemailer verification failed:', error.message);
-    } else {
-      console.log(`[Email] Transport is ready (using ${config.email.host}).`);
-    }
-  });
-
-} else {
-  console.warn('[Email] Email config missing in .env. Email features disabled.');
-}
-
-// 공통 sendEmail
-const sendEmail = async (to, subject, text, html) => {
-  if (!transporter) {
-    console.error('[Email] Attempted to send email but service is not configured.');
-    throw new Error('Email service is not configured on this server.');
-  }
-
+/**
+ * 비밀번호 재설정 메일 발송
+ * @param {string} to 사용자의 이메일
+ * @param {string} resetUrl 비밀번호 재설정 링크
+ */
+exports.sendPasswordResetEmail = async (to, resetUrl) => {
   try {
-    await transporter.sendMail({
-      from: config.email.from,
+    const { data, error } = await resend.emails.send({
+      from: process.env.EMAIL_FROM || 'PromptLab <no-reply@example.com>',
       to,
-      subject,
-      text,
-      html,
+      subject: 'Prompthub 비밀번호 재설정 요청',
+      html: `
+        <p>비밀번호 재설정을 요청하셨습니다.</p>
+        <p>아래 링크를 클릭해서 새 비밀번호를 설정해주세요.</p>
+        <p><a href="${resetUrl}">${resetUrl}</a></p>
+        <p>만약 본인이 요청한 것이 아니라면 이 메일을 무시하셔도 됩니다.</p>
+      `,
     });
 
-    console.log(`[Email] Sent to: ${to} | Subject: ${subject}`);
-  } catch (error) {
-    console.error('[Email] Error sending email:', error);
-    throw error;
+    if (error) {
+      console.error('[Email] Resend error:', error);
+      throw error;
+    }
+
+    console.log('[Email] Password reset mail sent:', data?.id, 'to', to);
+  } catch (err) {
+    console.error('[Email] Failed to send password reset email:', err);
+    // 여기는 네가 정책 정하면 됨
+    // 1) throw 해서 500으로 실패 처리하거나
+    // 2) 그냥 지나가고 "메일 보냈다고" 응답할 수도 있음
+    throw err;
   }
-};
-
-// 비밀번호 재설정 이메일
-const sendPasswordResetEmail = async (to, token) => {
-  const resetUrl = `${config.appUrl}/reset-password?token=${token}`;
-
-  await sendEmail(
-    to,
-    'Prompthub 비밀번호 재설정 요청',
-    `비밀번호를 재설정하려면 다음 링크를 클릭하세요: ${resetUrl}`,
-    `<p>비밀번호를 재설정하려면 <a href="${resetUrl}">여기를 클릭</a>하세요. (1시간 동안 유효)</p>`
-  );
-};
-
-// 이메일 변경 확인
-const sendEmailChangeVerification = async (to, token) => {
-  const verifyUrl = `${config.appUrl}/verify-email?token=${token}`;
-
-  await sendEmail(
-    to,
-    'Prompthub 이메일 주소 변경 확인',
-    `새 이메일 주소를 확인하려면 다음 링크를 클릭하세요: ${verifyUrl}`,
-    `<p>새 이메일 주소를 확인하려면 <a href="${verifyUrl}">여기를 클릭</a>하세요. (1시간 동안 유효)</p>`
-  );
-};
-
-module.exports = {
-  sendPasswordResetEmail,
-  sendEmailChangeVerification,
 };
