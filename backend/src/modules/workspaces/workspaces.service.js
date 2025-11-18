@@ -11,7 +11,7 @@ const config = require('../../config');
 const { generateSlug } = require('../../shared/utils');
 const userService = require('../users/users.service');
 const emailService = require('../auth/email');
-const promptsService = require('../prompts/prompt.service');
+const promptsService = require('../prompts/prompts.service');
 
 /**
  * 헬퍼 함수: DB 트랜잭션을 시작합니다.
@@ -568,7 +568,7 @@ exports.createPromptInWorkspace = async (workspaceId, userId, body) => {
   const promptBody = {
     name: body.name,
     description: body.description,
-    visibility: body.visibility || 'private',
+    visibility: 'private',
     tags: body.tags || [],
     content: body.content,
     commit_message: body.commit_message,
