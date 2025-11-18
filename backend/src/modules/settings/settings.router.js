@@ -21,6 +21,8 @@ router.patch('/environment', ctrl.updateEnvironment);
 router.post('/email/change-request', ctrl.requestEmailChange);
 router.post('/email/change-confirm', ctrl.confirmEmailChange);
 
-// 세션, 계정 삭제, 데이터 내보내기는 나중에
+// ── 계정 삭제 ──────────────────────────────────
+// DELETE /api/v1/settings/account
+router.delete('/account', ctrl.deleteAccount);
 
 module.exports = router;

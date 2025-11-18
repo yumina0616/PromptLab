@@ -65,3 +65,20 @@ exports.confirmEmailChange = (req, res, next) => {
     res.json({ changed: true });
   });
 };
+
+
+// ─────────────────────────────────────────────
+// 계정 삭제 (간단 버전: user.deleted_at 만 업데이트)
+// ─────────────────────────────────────────────
+
+// DELETE /api/v1/settings/account
+exports.deleteAccount = (req, res, next) => {
+  const userId = req.user.id;
+  const body = req.body || {};
+
+  svc.deleteAccount(userId, body, (err, result) => {
+    if (err) return next(err);
+    res.status(202).json(result); // { scheduled: true }
+  });
+};
+

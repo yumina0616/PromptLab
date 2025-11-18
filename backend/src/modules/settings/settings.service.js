@@ -324,3 +324,34 @@ exports.confirmEmailChange = function (body, cb) {
     }
   );
 };
+
+
+
+// ─────────────────────────────────────────────
+// 계정 삭제 (간단 버전: deleted_at 만 세팅)
+// ─────────────────────────────────────────────
+
+exports.deleteAccount = function(userId, body, cb) {
+  try {
+    // 간단버전이므로 reauth_token 검증은 생략
+    // (실서비스라면 비밀번호 재확인 or OAuth reauth 필요)
+
+    pool.query(
+      'UPDATE user SET deleted_at = NOW() WHERE id = ? AND deleted_at IS NULL',
+      [userId],
+      function(err, result) {
+        if (err) return cb(err);
+
+        if (!result.affectedRows) {
+          // 이미 삭제됐거나 없는 계정
+          return cb(httpError(404, 'USER_NOT_FOUND'));
+        }
+
+        // 실제 삭제는 비동기 스케줄러가 한다고 가정
+        cb(null, { scheduled: true });
+      }
+    );
+  } catch (err) {
+    cb(err);
+  }
+};
