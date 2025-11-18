@@ -32,9 +32,44 @@ const userService = {
 
   getUserByIdForProfile: async (id) => {
     try {
-      // [수정] pool.promise().query
       const [rows] = await pool.promise().query(
-        'SELECT id, email, userid, display_name, profile_image_url, bio, theme, language, timezone, default_prompt_visibility, is_profile_public, show_email, pending_email, (SELECT COUNT(*) FROM prompt p WHERE p.owner_id = u.id AND (p.deleted_at IS NULL OR p.deleted_at = 0)) AS prompt_count, (SELECT COUNT(*) FROM favorite f JOIN prompt_version v ON v.id = f.prompt_version_id JOIN prompt p ON p.id = v.prompt_id WHERE p.owner_id = u.id AND (p.deleted_at IS NULL OR p.deleted_at = 0)) AS star_countFROM user u WHERE id = ?',
+        `
+        SELECT
+          u.id,
+          u.email,
+          u.userid,
+          u.display_name,
+          u.profile_image_url,
+          u.bio,
+          u.theme,
+          u.language,
+          u.timezone,
+          u.default_prompt_visibility,
+          u.is_profile_public,
+          u.show_email,
+          u.pending_email,
+
+          -- 프롬프트 개수
+          (
+            SELECT COUNT(*)
+            FROM prompt p
+            WHERE p.owner_id = u.id
+              AND (p.deleted_at IS NULL OR p.deleted_at = 0)
+          ) AS prompt_count,
+
+          -- 즐겨찾기 개수
+          (
+            SELECT COUNT(*)
+            FROM favorite f
+            JOIN prompt_version v ON v.id = f.prompt_version_id
+            JOIN prompt p ON p.id = v.prompt_id
+            WHERE p.owner_id = u.id
+              AND (p.deleted_at IS NULL OR p.deleted_at = 0)
+          ) AS star_count
+
+        FROM user u
+        WHERE u.id = ?
+        `,
         [id]
       );
       return rows[0];
