@@ -49,10 +49,10 @@ app.use(express.json());
 app.use(cookieParser());
 
 // 임시 로그인
-app.use(function (req, res, next) {
-  req.user = { id: 13, is_admin: true };
-  next();
-});
+//app.use(function (req, res, next) {
+//  req.user = { id: 13, is_admin: true };
+//  next();
+//});
 
 // 헬스 체크
 app.get('/health', function (req, res) {
