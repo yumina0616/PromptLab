@@ -123,3 +123,50 @@ exports.validatePagination = [
     query('sort').optional().isIn(['recent', 'name']).withMessage('Sort can only be "recent" or "name".'),
     handleValidationErrors,
 ];
+// --- 6. Workspace 내 팀 프롬프트 생성 ---
+// POST /workspaces/:id/prompts
+exports.validateWorkspacePromptCreate = [
+  body('name')
+    .isString()
+    .trim()
+    .notEmpty()
+    .isLength({ min: 1, max: 120 })
+    .withMessage('Name must be between 1 and 120 characters.'),
+  body('description')
+    .optional()
+    .isString()
+    .trim()
+    .isLength({ max: 1000 })
+    .withMessage('Description must be 1000 characters or fewer.'),
+  body('visibility')
+    .optional()
+    .isIn(['public', 'private', 'unlisted'])
+    .withMessage('Visibility must be one of public, private, or unlisted.'),
+  body('tags')
+    .optional()
+    .isArray()
+    .withMessage('Tags must be an array.'),
+  body('content')
+    .isString()
+    .notEmpty()
+    .withMessage('Content is required.'),
+  body('commit_message')
+    .optional()
+    .isString()
+    .isLength({ max: 255 })
+    .withMessage('Commit message must be 255 characters or fewer.'),
+  body('category_code')
+    .optional()
+    .isString(),
+  body('model_setting')
+    .isObject()
+    .withMessage('Model setting is required.'),
+  body('model_setting.ai_model_id')
+    .isInt()
+    .withMessage('ai_model_id is required.'),
+  body('role')
+    .optional()
+    .isIn(['viewer', 'editor'])
+    .withMessage('Prompt role must be either viewer or editor.'),
+  handleValidationErrors,
+];

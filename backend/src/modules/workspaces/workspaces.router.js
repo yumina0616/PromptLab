@@ -153,6 +153,21 @@ router.post(
   controller.sharePrompt
 );
 
+router.get(
+  '/:id/prompts',
+  workspaceAuth.loadWorkspace,
+  workspaceAuth.isMember,
+  validate.validatePagination,
+  controller.getSharedPromptList
+);
+
+router.post(
+  '/:id/prompts',
+  workspaceAuth.loadWorkspace,
+  workspaceAuth.isMember,                // 팀 멤버면 누구나 생성 가능
+  validate.validateWorkspacePromptCreate,
+  controller.createPromptInWorkspace
+);
 // PATCH /api/v1/workspaces/:id/prompts/:promptId
 router.patch(
   '/:id/prompts/:promptId',

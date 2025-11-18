@@ -6,6 +6,7 @@ const config = require('../../config');
 const { generateSlug } = require('../../shared/utils');
 const userService = require('../users/users.service');
 const emailService = require('../auth/email');
+const promptsService = require('../prompts/prompts.service');
 
 /**
  * 헬퍼 함수: DB 트랜잭션을 시작합니다.
@@ -28,6 +29,46 @@ const beginTransaction = async () => {
 /**
  * 워크스페이스 단일 조회 (권한 미들웨어용)
  */
+
+const createPromptWithFirstVersionAsync = (userId, body) =>
+  new Promise((resolve, reject) => {
+    promptsService.createPromptWithFirstVersion(userId, body, (err, result) => {
+      if (err) return reject(err);
+      resolve(result); // { id, owner_id, latest_version_id }
+    });
+  });
+
+  // 이름 기반 기본 slug를 만들고, DB에서 중복을 체크해서
+// 필요하면 -1, -2, -3 ... 를 붙여서 유니크 slug를 만든다.
+async function generateUniqueSlug(conn, name) {
+  // name 이 비어있으면 기본값
+  const base = generateSlug(name || 'workspace');
+
+  let slug = base;
+  let counter = 1;
+
+  // 같은 slug가 없을 때까지 계속 시도
+  // ex) ai-team, ai-team-1, ai-team-2 ...
+  // (트랜잭션 안에서 실행되기 때문에 경쟁 조건도 최소화됨)
+  // slugValidation: /^[a-z0-9-]+$/ 을 만족한다고 가정
+  // generateSlug 가 이미 소문자/하이픈으로 만들어 줄 것.
+  // 혹시 base 가 너무 길면 뒤에 숫자 붙일 자리 조금 줄이는 것도 가능(필요하면 추가)
+  // 여기선 단순하게 처리.
+  while (true) {
+    const [rows] = await conn.query(
+      'SELECT id FROM workspaces WHERE slug = ? LIMIT 1',
+      [slug]
+    );
+
+    if (rows.length === 0) {
+      return slug;
+    }
+
+    counter += 1;
+    slug = `${base}-${counter}`;
+  }
+}
+
 exports.getWorkspaceById = async (workspaceId) => {
     const [rows] = await pool.execute(
         'SELECT id, kind, name, description, slug, created_by FROM workspaces WHERE id = ?',
@@ -40,13 +81,23 @@ exports.getWorkspaceById = async (workspaceId) => {
 exports.createWorkspace = async (data, userId) => {
     const conn = await beginTransaction();
     try {
-        // 1. Slug 처리 (미지정 시 생성, 중복 체크)
-        let slug = data.slug || generateSlug(data.name);
-        
-        // 2. Slug 중복 체크 (전역 유니크)
-        const [existing] = await conn.query('SELECT id FROM workspaces WHERE slug = ?', [slug]);
-        if (existing.length > 0) {
-            throw new ConflictError('SLUG_TAKEN', 'Workspace slug is already taken.');
+        let slug;
+
+        if (data.slug) {
+            // 클라에서 slug를 직접 넘긴 경우 → 그 값으로 중복 체크
+            slug = data.slug;
+
+            const [existing] = await conn.query(
+                'SELECT id FROM workspaces WHERE slug = ?',
+                [slug]
+            );
+
+            if (existing.length > 0) {
+                throw new ConflictError('SLUG_TAKEN', 'Workspace slug is already taken.');
+            }
+        } else {
+            // slug 를 안 보내면 이름 기반으로 유니크 slug 자동 생성
+            slug = await generateUniqueSlug(conn, data.name);
         }
 
         // 3. 워크스페이스 생성 (description 추가)
@@ -79,6 +130,7 @@ exports.createWorkspace = async (data, userId) => {
         conn.release();
     }
 };
+
 
 
 /**
@@ -510,6 +562,55 @@ exports.cancelInvite = async (token) => {
 /**
  * 공유된 프롬프트 목록을 조회합니다. (스펙 14)
  */
+
+exports.createPromptInWorkspace = async (workspaceId, userId, body) => {
+    const wsId = Number(workspaceId);
+    if (!wsId) {
+        throw new BadRequestError('INVALID_WORKSPACE_ID', 'Invalid workspace id.');
+    }
+
+    // 워크스페이스 존재 확인 (멤버 여부는 미들웨어에서 이미 검사)
+    const [wsRows] = await pool.execute(
+        'SELECT id FROM workspaces WHERE id = ?',
+        [wsId]
+    );
+    if (wsRows.length === 0) {
+        throw new NotFoundError('WORKSPACE_NOT_FOUND', 'Workspace not found.');
+    }
+
+    // 1) 프롬프트 + 첫 버전 생성 (기본 visibility: private)
+    const promptBody = {
+        name: body.name,
+        description: body.description,
+        visibility: body.visibility || 'private',
+        tags: body.tags || [],
+        content: body.content,
+        commit_message: body.commit_message,
+        category_code: body.category_code,
+        is_draft: false,               // 팀 프롬프트는 바로 확정본으로 저장
+        model_setting: body.model_setting,
+    };
+
+    const prompt = await createPromptWithFirstVersionAsync(userId, promptBody);
+    // prompt: { id, owner_id, latest_version_id }
+
+    // 2) workspace_prompts 에 공유 정보 추가
+    const role = body.role || 'editor';
+
+    await pool.execute(
+        'INSERT INTO workspace_prompts (workspace_id, prompt_id, role, added_by) VALUES (?, ?, ?, ?)',
+        [wsId, prompt.id, role, userId]
+    );
+
+    return {
+        workspace_id: wsId,
+        prompt_id: prompt.id,
+        role,
+        prompt,
+    };
+};
+
+
 exports.getSharedPromptList = async (workspaceId, pagination = {}) => {
   const page = Number(pagination.page) || 1;
   const limit = Number(pagination.limit) || 20;

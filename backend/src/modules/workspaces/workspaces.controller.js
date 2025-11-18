@@ -175,6 +175,24 @@ exports.cancelInvite = async (req, res, next) => {
 };
 
 // --- 4. Shared Prompts (공유된 프롬프트) ---
+// POST /workspaces/:id/prompts (팀 프롬프트 생성 + 공유)
+exports.createPromptInWorkspace = async (req, res, next) => {
+    try {
+        const workspaceId = req.params.id;
+        const userId = req.user.id;
+
+        const result = await workspaceService.createPromptInWorkspace(
+            workspaceId,
+            userId,
+            req.body
+        );
+
+        // result: { workspace_id, prompt_id, role, prompt }
+        res.status(201).json(result);
+    } catch (error) {
+        next(error);
+    }
+};
 
 // GET /workspaces/:id/prompts (공유 목록)
 exports.getSharedPromptList = async (req, res, next) => {
