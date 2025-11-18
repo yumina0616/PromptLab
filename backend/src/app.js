@@ -14,6 +14,7 @@ const promptRouter = require('./modules/prompts/prompt.router');
 const playgroundRouter = require('./modules/playground/playground.router');
 const modelRouter = require('./modules/models/model.router');
 const notificationRouter = require('./modules/notifications/notification.router');
+const settingsRouter = require('./modules/settings/settings.router');
 
 const app = express();
 
@@ -52,6 +53,7 @@ app.use('/api/v1/users', userRouter);
 app.use('/api/v1/prompts', promptRouter);
 app.use('/api/v1/workspaces', workspaceRouter);
 app.use('/api/v1/notifications', notificationRouter);
+app.use('/api/v1/settings', settingsRouter);
 
 // 404 처리
 app.use((req, res, next) => {
