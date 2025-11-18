@@ -38,6 +38,37 @@ function ensureOwner(conn, userId, promptId, cb){
   });
 }
 
+function ensurePromptViewer(userId, promptId, cb){
+  if (!userId) return cb(httpError(401, 'UNAUTHORIZED'));
+  pool.query('SELECT owner_id FROM prompt WHERE id = ?', [promptId], function(err, rows){
+    if (err) return cb(err);
+    if (!rows.length) return cb(httpError(404,'Prompt not found'));
+    if (rows[0].owner_id === userId) return cb(null, rows[0].owner_id);
+    pool.query(
+      `SELECT 1
+       FROM workspace_prompts wp
+       JOIN workspace_members wm ON wm.workspace_id = wp.workspace_id
+       WHERE wp.prompt_id = ? AND wm.user_id = ?
+       LIMIT 1`,
+      [promptId, userId],
+      function(err2, shared){
+        if (err2) return cb(err2);
+        if (!shared.length) return cb(httpError(403,'Forbidden'));
+        cb(null, rows[0].owner_id);
+      }
+    );
+  });
+}
+
+function ensurePromptViewerAsync(userId, promptId){
+  return new Promise((resolve, reject) => {
+    ensurePromptViewer(userId, promptId, function(err, ownerId){
+      if (err) return reject(err);
+      resolve(ownerId);
+    });
+  });
+}
+
 function getCategoryIdByCode(conn, code, cb){
   if (!code) return cb(null, null);
   conn.query('SELECT id FROM category WHERE code = ?', [code], function(err, rows){
@@ -142,17 +173,23 @@ exports.listPrompts = function (userId, q, done) {
     const where  = [];
     const params = [];
 
+    const isOwnerMe = q && q.owner === 'me';
+
     // 1) owner 필터: owner=me
-    if (q && q.owner === 'me') {
+    if (isOwnerMe) {
       if (!userId) return done(httpError(401, 'UNAUTHORIZED'));
       where.push('p.owner_id = ?');
       params.push(userId);
-    }
 
-    // 2) visibility 필터
-    if (q && q.visibility) {
-      where.push('p.visibility = ?');
-      params.push(q.visibility);
+      // 내 프롬프트 목록에서는 visibility 필터를 선택적으로 걸 수 있음
+      if (q && q.visibility) {
+        where.push('p.visibility = ?');
+        params.push(q.visibility);
+      }
+    } else {
+      // ★ 글로벌 검색(owner 파라미터 없거나 'me'가 아닌 경우)은
+      // 항상 public 만 조회
+      where.push("p.visibility = 'public'");
     }
 
     // 3) 검색어(q): 이름/설명 LIKE
@@ -175,17 +212,17 @@ exports.listPrompts = function (userId, q, done) {
 
     // 5) 카테고리 필터: category=dev
     if (q && q.category) {
-  where.push(`
-    EXISTS (
-      SELECT 1
-      FROM prompt_version v2
-      JOIN category c ON c.id = v2.category_id
-      WHERE v2.prompt_id = p.id
-        AND c.code = ?
-    )
-  `);
-  params.push(q.category);
-}
+      where.push(`
+        EXISTS (
+          SELECT 1
+          FROM prompt_version v2
+          JOIN category c ON c.id = v2.category_id
+          WHERE v2.prompt_id = p.id
+            AND c.code = ?
+        )
+      `);
+      params.push(q.category);
+    }
 
     const whereSql = where.length ? ('WHERE ' + where.join(' AND ')) : '';
 
@@ -307,6 +344,7 @@ exports.listPrompts = function (userId, q, done) {
     done(err);
   }
 };
+
 
 
 
@@ -433,11 +471,8 @@ exports.deletePrompt = function(userId, id, done){
 
 // ===== 버전 =====
 exports.listVersions = function(userId, promptId, query, done){
-  // 권한 체크는 소유자 기준으로 단순 처리 (추후 공유권한 확장)
-  pool.query('SELECT owner_id FROM prompt WHERE id = ?', [promptId], function(err, r){
+  ensurePromptViewer(userId, promptId, function(err){
     if (err) return done(err);
-    if (!r.length) return done(httpError(404,'Prompt not found'));
-    if (r[0].owner_id !== userId) return done(httpError(403,'Forbidden'));
 
     const includeDraft = String((query && query.includeDraft) || '').toLowerCase() === 'true';
     const sql = `
@@ -550,10 +585,8 @@ exports.createVersion = function(userId, promptId, body, done){
 
 
 exports.getVersion = function(userId, promptId, verId, done){
-  pool.query('SELECT owner_id FROM prompt WHERE id = ?', [promptId], function(err, r){
+  ensurePromptViewer(userId, promptId, function(err){
     if (err) return done(err);
-    if (!r.length) return done(httpError(404,'Prompt not found'));
-    if (r[0].owner_id !== userId) return done(httpError(403,'Forbidden'));
 
     pool.query(
       `SELECT pv.*, c.code AS category_code, c.name_kr AS category_name
@@ -668,15 +701,7 @@ exports.deleteVersion = function(userId, promptId, verId, done){
 
 // 모델 세팅
 exports.getModelSetting = async (userId, promptId, verId) => {
-  
-  // 1. pool.query에 콜백 대신 await을 사용합니다.
-  const [r] = await pool.promise().query('SELECT owner_id FROM prompt WHERE id = ?', [promptId]);
-
-  // 2. 에러 및 권한 검사
-  if (!r.length) throw httpError(404,'Prompt not found');
-  if (r[0].owner_id !== userId) throw httpError(403,'Forbidden');
-
-  // 3. 두 번째 쿼리 실행
+  await ensurePromptViewerAsync(userId, promptId);
   const [rows] = await pool.promise().query('SELECT * FROM model_setting WHERE prompt_version_id = ?', [verId]);
 
   // 4. 콜백(done) 대신, 값을 바로 return 합니다.
