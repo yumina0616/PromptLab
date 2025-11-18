@@ -2,8 +2,9 @@ const express = require('express');
 const cors = require('cors');
 const morgan = require('morgan');
 require('dotenv').config();  // ✅ .env 로드
-const cookieParser = require('cookie-parser'); 
+const cookieParser = require('cookie-parser');
 const passport = require('passport');
+
 const setupPassport = require('./modules/auth/passport');
 const mainRouter = require('./routes');
 const { ApiError, NotFoundError } = require('./shared/error');
@@ -18,10 +19,11 @@ const settingsRouter = require('./modules/settings/settings.router');
 
 const app = express();
 
+// CORS 허용 origin 목록
 const allowedOrigins = [
-  'http://localhost:5173',                  // 네 로컬
-  'http://localhost:3000',                  // 팀장 로컬일 수도 있음
-  'https://promptlab-frontend.vercel.app',  // 실제 프론트 배포 주소 (예시)
+  'http://localhost:5173',                 // 너 로컬
+  'http://localhost:3000',                 // 팀장 로컬일 수도 있음
+  'https://promptlab-frontend.vercel.app', // 실제 프론트 배포 주소 (필요시 수정)
 ];
 
 const corsOptions = {
@@ -38,21 +40,26 @@ const corsOptions = {
   allowedHeaders: ['Content-Type', 'Authorization'],
 };
 
+// CORS 미들웨어
 app.use(cors(corsOptions));
-app.options('*', cors(corsOptions));
 
-// 미들웨어
+// 공통 미들웨어
 app.use(morgan('dev'));
 app.use(express.json());
-app.use(cookieParser());   
+app.use(cookieParser());
 
 // 임시 로그인
-app.use(function(req, res, next){
+app.use(function (req, res, next) {
   req.user = { id: 4, is_admin: true };
   next();
 });
 
-app.get('/health', function(req,res){ res.json({ ok:true }); });
+// 헬스 체크
+app.get('/health', function (req, res) {
+  res.json({ ok: true });
+});
+
+// 일부 라우터는 베이스 없이 직접 바인딩
 app.use('/api/v1/playground', playgroundRouter);
 app.use('/api/v1/models', modelRouter);
 
@@ -60,7 +67,7 @@ app.use('/api/v1/models', modelRouter);
 app.use(passport.initialize());
 setupPassport(passport);
 
-// 베이스 URL
+// 베이스 URL 하위 라우터
 app.use('/api/v1', mainRouter);
 app.use('/api/v1/auth', authRouter);
 app.use('/api/v1/users', userRouter);
@@ -86,12 +93,9 @@ app.use((err, req, res, next) => {
     error: {
       code: err.code,
       message: err.message,
-      details: null
-    }
+      details: null,
+    },
   });
 });
 
-
-
 module.exports = app;
-
