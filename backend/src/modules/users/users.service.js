@@ -380,38 +380,150 @@ const userService = {
   },
 
   getActivityByUserid: async (targetUserId, loggedInUserId, options) => {
+    // 🔒 본인 것만 조회 가능
     if (targetUserId !== loggedInUserId) throw new Error('FORBIDDEN');
+
     const { page = 1, limit = 20, action } = options;
     const offset = (page - 1) * limit;
-    let filterConditions = "";
-    const queryParams = [targetUserId];
-    if (action) {
-      filterConditions += " AND a.action = ?";
-      queryParams.push(action);
+
+    // --- 1) 액션 값 검증 ---
+    const allowedActions = [
+      'create_prompt',
+      'update_prompt',
+      'star_prompt',
+      'fork_prompt',
+      'all',
+      undefined,
+      null,
+      '',
+    ];
+
+    if (!allowedActions.includes(action)) {
+      throw new Error('INVALID_ACTION');
     }
-    const mainQuery = `
-      SELECT a.id, a.action, a.entity_type, a.entity_id, a.metadata, a.created_at
-      FROM activity a
-      WHERE a.user_id = ? ${filterConditions}
-      ORDER BY a.created_at DESC LIMIT ? OFFSET ?
+
+    // --- 2) 각 액션별 쿼리 정의 ---
+
+    // ① 프롬프트 생성
+    const qCreate = `
+      SELECT 
+        'create_prompt' AS action,
+        p.id           AS prompt_id,
+        p.name         AS prompt_name,
+        p.created_at   AS created_at
+      FROM prompt p
+      WHERE p.owner_id = ?
+        AND (p.deleted_at IS NULL OR p.deleted_at = 0)
     `;
-    queryParams.push(limit, offset);
-    const countQuery = `SELECT COUNT(*) as total FROM activity a WHERE a.user_id = ? ${filterConditions}`;
-    const countParams = queryParams.slice(0, -2);
-    try {
-      // [수정] pool.promise().query
-      const [items] = await pool.promise().query(mainQuery, queryParams);
-      const [countRows] = await pool.promise().query(countQuery, countParams);
-      const formattedItems = items.map(item => ({
-        ...item,
-        metadata: item.metadata ? JSON.parse(item.metadata) : null,
-      }));
-      return { items: formattedItems, total: countRows[0].total };
-    } catch (error) {
-      console.error("Error in getActivityByUserid:", error);
-      throw new Error('Error getting activity');
+
+    // ② 프롬프트 업데이트 (최초 버전 제외, owner 기준)
+    const qUpdate = `
+      SELECT
+        'update_prompt' AS action,
+        p.id            AS prompt_id,
+        p.name          AS prompt_name,
+        v.created_at    AS created_at
+      FROM prompt_version v
+      JOIN prompt p ON p.id = v.prompt_id
+      WHERE p.owner_id = ?
+        AND v.version_number > 1
+        AND (p.deleted_at IS NULL OR p.deleted_at = 0)
+    `;
+
+    // ③ 프롬프트에 스타
+    const qStar = `
+      SELECT
+        'star_prompt'   AS action,
+        p.id            AS prompt_id,
+        p.name          AS prompt_name,
+        f.created_at    AS created_at
+      FROM favorite f
+      JOIN prompt_version v ON f.prompt_version_id = v.id
+      JOIN prompt p         ON v.prompt_id        = p.id
+      WHERE f.user_id = ?
+        AND (p.deleted_at IS NULL OR p.deleted_at = 0)
+    `;
+
+    // ④ 프롬프트 포크
+    const qFork = `
+      SELECT
+        'fork_prompt'   AS action,
+        p.id            AS prompt_id,
+        p.name          AS prompt_name,
+        f.created_at    AS created_at
+      FROM fork f
+      JOIN prompt p ON f.target_prompt_id = p.id
+      WHERE f.forked_by = ?
+        AND (p.deleted_at IS NULL OR p.deleted_at = 0)
+    `;
+
+    // --- 3) action 파라미터에 따라 UNION 구성 ---
+    let unionSql = '';
+    let params = [];
+
+    if (!action || action === 'all') {
+      // 네 가지 전부
+      unionSql = `
+        (${qCreate})
+        UNION ALL
+        (${qUpdate})
+        UNION ALL
+        (${qStar})
+        UNION ALL
+        (${qFork})
+      `;
+      params = [targetUserId, targetUserId, targetUserId, targetUserId];
+    } else if (action === 'create_prompt') {
+      unionSql = `(${qCreate})`;
+      params = [targetUserId];
+    } else if (action === 'update_prompt') {
+      unionSql = `(${qUpdate})`;
+      params = [targetUserId];
+    } else if (action === 'star_prompt') {
+      unionSql = `(${qStar})`;
+      params = [targetUserId];
+    } else if (action === 'fork_prompt') {
+      unionSql = `(${qFork})`;
+      params = [targetUserId];
     }
+
+    // --- 4) 실제 목록 조회 (정렬 + 페이징) ---
+    const listSql = `
+      SELECT action, prompt_id, prompt_name, created_at
+      FROM (
+        ${unionSql}
+      ) AS a
+      ORDER BY created_at DESC
+      LIMIT ? OFFSET ?
+    `;
+
+    const [rows] = await pool.promise().query(listSql, [...params, limit, offset]);
+
+    // --- 5) total 개수 조회 ---
+    const countSql = `
+      SELECT COUNT(*) AS total
+      FROM (
+        ${unionSql}
+      ) AS a
+    `;
+    const [[{ total }]] = await pool.promise().query(countSql, params);
+
+    // --- 6) 응답 포맷 ---
+    const items = rows.map((row) => ({
+      action: row.action,           // create_prompt / update_prompt / star_prompt / fork_prompt
+      prompt_id: row.prompt_id,     // 프롬프트 ID
+      prompt_name: row.prompt_name, // 프롬프트 이름
+      created_at: row.created_at,   // 해당 활동이 발생한 시각
+    }));
+
+    return {
+      items,
+      total,
+      page: Number(page),
+      limit: Number(limit),
+    };
   },
+
 
   requestExport: async (userId) => {
     try {
