@@ -1,12 +1,38 @@
 const passport = require('passport');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const GitHubStrategy = require('passport-github2').Strategy;
+
+const { Strategy: JwtStrategy, ExtractJwt } = require('passport-jwt');
 const config = require('../../config');
 const userService = require('../users/users.service');
 const { BadRequestError } = require('../../shared/error');
 
 // passport.js 설정을 초기화하는 함수
 module.exports = (passport) => {
+
+  const jwtOptions = {
+        // JWT를 요청의 Authorization 헤더에서 Bearer 토큰으로 추출합니다.
+        jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(), 
+        // Access Token을 서명할 때 사용한 Secret Key를 사용합니다.
+        secretOrKey: config.jwt.accessSecret || process.env.JWT_ACCESS_SECRET,
+    };
+
+    passport.use('jwt', new JwtStrategy(jwtOptions, async (jwt_payload, done) => {
+        try {
+            // payload에서 user id (id: 13 등)를 가져와 DB에서 유저 정보를 조회합니다.
+            const user = await userService.getUserByIdForProfile(jwt_payload.id);
+
+            if (user) {
+                // 인증 성공: req.user에 user 객체를 할당합니다.
+                return done(null, user);
+            } else {
+                // 유효한 토큰이지만 DB에 유저가 없는 경우
+                return done(null, false); 
+            }
+        } catch (error) {
+            return done(error, false);
+        }
+    }));
 
   // --- Google OAuth Strategy ---
   passport.use(new GoogleStrategy(
