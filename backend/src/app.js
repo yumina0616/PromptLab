@@ -18,14 +18,28 @@ const settingsRouter = require('./modules/settings/settings.router');
 
 const app = express();
 
+const allowedOrigins = [
+  'http://localhost:5173',                  // 네 로컬
+  'http://localhost:3000',                  // 팀장 로컬일 수도 있음
+  'https://promptlab-frontend.vercel.app',  // 실제 프론트 배포 주소 (예시)
+];
+
 const corsOptions = {
-  origin: 'http://localhost:5173',
+  origin(origin, callback) {
+    // Postman / 서버-서버 요청처럼 origin 없는 경우도 허용
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 };
 
 app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 
 // 미들웨어
 app.use(morgan('dev'));
@@ -80,3 +94,4 @@ app.use((err, req, res, next) => {
 
 
 module.exports = app;
+
