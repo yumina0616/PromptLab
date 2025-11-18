@@ -13,13 +13,17 @@ const { validationResult } = require('express-validator');
 const { BadRequestError, ApiError, UnauthorizedError } = require('../../shared/error');
 const passport = require('passport');
 
+const isProd = process.env.NODE_ENV === 'production';
+
 // (PDF 스펙) HttpOnly 쿠키 설정
 const setRefreshTokenCookie = (res, token) => {
   res.cookie('refresh_token', token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production', // https에서만
-    sameSite: 'strict',
-    maxAge: config.jwt.refreshTtl * 1000, // ms
+    secure: isProd,                     // 배포 환경(https)에서만 secure
+    // 🔥 프론트/백엔드 origin 다르면 SameSite는 'none'이어야 cross-site 쿠키 전송됨
+    sameSite: isProd ? 'none' : 'lax',  // dev에서 proxy 없이 완전 cross-origin이면 'none'으로 맞춰도 됨
+    maxAge: config.jwt.refreshTtl * 1000,
+    path: '/api/v1/auth',               // refresh에서만 쓸 거면 이렇게 한정해도 OK
   });
 };
 
@@ -98,6 +102,8 @@ const authController = {
 
   // POST /logout
 
+// auth.controller.js
+
   logout: async (req, res, next) => {
     try {
       const refreshToken =
@@ -109,11 +115,14 @@ const authController = {
         await authService.logout(refreshToken);
       }
 
+      const isProd = process.env.NODE_ENV === 'production';
+
       res.cookie('refresh_token', '', {
         httpOnly: true,
         expires: new Date(0),
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
+        secure: isProd,
+        sameSite: isProd ? 'none' : 'lax',
+        path: '/api/v1/auth',
       });
 
       return res.status(204).send();
@@ -121,6 +130,7 @@ const authController = {
       next(error);
     }
   },
+
 
   // GET /me
   getMe: (req, res, next) => {
