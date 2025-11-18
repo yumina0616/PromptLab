@@ -1,8 +1,8 @@
 const express = require('express');
 const cors = require('cors');
 const morgan = require('morgan');
-require('dotenv').config();
-
+require('dotenv').config();  // ✅ .env 로드
+const cookieParser = require('cookie-parser'); 
 const passport = require('passport');
 const setupPassport = require('./modules/auth/passport');
 const mainRouter = require('./routes');
@@ -28,6 +28,7 @@ app.use(cors(corsOptions));
 // 미들웨어
 app.use(morgan('dev'));
 app.use(express.json());
+app.use(cookieParser());   
 
 // 임시 로그인
 app.use(function(req, res, next){

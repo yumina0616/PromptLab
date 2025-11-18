@@ -97,21 +97,31 @@ const authController = {
 
 
   // POST /logout
+
   logout: async (req, res, next) => {
     try {
-      const token = req.cookies.refresh_token;
-      await authService.logout(token);
-      
-      // 쿠키 삭제
-      res.cookie('refresh_token', '', { httpOnly: true, expires: new Date(0) });
-      
-      // (PDF 스펙)
-      res.status(204).send();
+      const refreshToken =
+        (req.cookies && req.cookies.refresh_token) ||
+        (req.body && req.body.refresh_token) ||
+        null;
+
+      if (refreshToken) {
+        await authService.logout(refreshToken);
+      }
+
+      res.cookie('refresh_token', '', {
+        httpOnly: true,
+        expires: new Date(0),
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+      });
+
+      return res.status(204).send();
     } catch (error) {
       next(error);
     }
   },
-  
+
   // GET /me
   getMe: (req, res, next) => {
     // protect 미들웨어에서 req.user에 이미 정보를 담아둠
@@ -226,21 +236,33 @@ const authController = {
 
   // --- Password Management ---
 
+// auth.controller.js
+
+// auth.controller.js
+
   changePassword: async (req, res, next) => {
     try {
       const errors = validationResult(req);
-      if (!errors.isEmpty()) throw new BadRequestError('VALIDATION_ERROR', errors.array()[0].msg);
-      
-      const { email } = req.user; // ★ 이메일 꺼내기
-      const { currentPassword, newPassword } = req.body; // camelCase
-      
-      await authService.changePassword(email, currentPassword, newPassword);
-      
+      if (!errors.isEmpty()) {
+        throw new BadRequestError('VALIDATION_ERROR', errors.array()[0].msg);
+      }
+
+      // protect 미들웨어에서 넣어준 유저 id
+      const userId = req.user.id;
+
+      // 스펙: current_password / new_password
+      const { current_password, new_password } = req.body;
+
+      await authService.changePassword(userId, current_password, new_password);
+
       res.status(204).send();
     } catch (error) {
       next(error);
     }
   },
+
+
+
 
 
   requestPasswordReset: async (req, res, next) => {

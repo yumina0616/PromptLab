@@ -10,11 +10,17 @@ const userService = {
 
   getUserByEmailWithPassword: async (email) => {
     try {
-      // [수정] pool.promise().query
-      const [rows] = await pool.promise().query('SELECT * FROM user WHERE email = ?', [email]);
+      const [rows] = await pool.promise().query(
+        'SELECT id, email, userid, display_name, password, login_type, refresh_token FROM user WHERE email = ?',
+        [email]
+      );
       return rows[0];
-    } catch (error) { throw new Error('Error finding user by email'); }
+    } catch (error) {
+      console.error('getUserByEmailWithPassword error:', error);  // ✅ 실제 에러 로그
+      throw error; // 굳이 새 Error 만들지 말고 원본을 던져
+    }
   },
+
   
   getUserByUserid: async (userid) => {
     try {
@@ -42,6 +48,19 @@ const userService = {
       return rows[0];
     } catch (error) { throw new Error('Error finding user by id'); }
   },
+
+  getUserByIdWithPassword: async (id) => {
+    try {
+      const [rows] = await pool.promise().query(
+        'SELECT id, email, userid, display_name, password, login_type, refresh_token FROM user WHERE id = ?',
+        [id]
+      );
+      return rows[0];
+    } catch (error) {
+      throw new Error('Error finding user by id with password');
+    }
+  },
+
 
   createUser: async ({ email, hashedPassword, userid, displayName }) => {
     try {

@@ -106,29 +106,44 @@ const authService = {
     };
   },
 
+
+
+
   /**
    * 로그아웃 (Logout)
    */
+/**
+ * 로그아웃 (Logout)
+ */
   logout: async (refreshToken) => {
     // Refresh Token이 없으면 아무것도 안함
     if (!refreshToken) {
       return;
     }
-    const decoded = verifyRefreshToken(token);
-    if (decoded) {
-      // DB에서 Refresh Token을 무효화
-      await userService.updateRefreshToken(decoded.id, null);
+
+    const decoded = verifyRefreshToken(refreshToken);  // ✅ 올바른 변수 사용
+    if (!decoded) {
+      // 이미 만료/깨진 토큰이면 그냥 조용히 무시
+      return;
     }
-    // PDF 스펙 204를 위해 아무것도 반환 안함
+
+    // DB에서 Refresh Token을 무효화
+    await userService.updateRefreshToken(decoded.id, null);
+
+    // PDF 스펙 204용: 반환값 없음
   },
+
 
   /**
    * 비밀번호 변경 (Change Password)
    */
 // 수정 버전
-  changePassword: async (email, currentPassword, newPassword) => {
-    // 이메일로 유저 + 패스워드 가져오기
-    const user = await userService.getUserByEmailWithPassword(email);
+/**
+ * 비밀번호 변경 (Change Password)
+ */
+  changePassword: async (userId, currentPassword, newPassword) => {
+    // id로 유저 + 패스워드 가져오기
+    const user = await userService.getUserByIdWithPassword(userId);
     if (!user || !user.password) {
       throw new BadRequestError('OAUTH_USER', 'OAuth users cannot change password this way.');
     }
@@ -141,9 +156,9 @@ const authService = {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(newPassword, salt);
 
-    // 여기서는 user.id 사용
     await userService.updatePassword(user.id, hashedPassword);
   },
+
 
 
   /**
@@ -182,14 +197,19 @@ const authService = {
    * OAuth 연동 해제
    */
   unlinkOauth: async (userId, provider) => {
-    const user = await userService.getUserByEmailWithPassword(userId); //(재활용)
-    // (PDF 스펙) 마지막 로그인 수단이면 차단
-    if (!user.password) {
-      throw new BadRequestError('LAST_LOGIN_METHOD', 'Cannot unlink the only login method. Please set a password first.');
+    // id 기준으로, 비밀번호 있는(local) 유저인지 확인
+    const user = await userService.getUserByIdWithPassword(userId);
+
+    if (!user || !user.password) {
+      throw new BadRequestError(
+        'LAST_LOGIN_METHOD',
+        'Cannot unlink the only login method. Please set a password first.'
+      );
     }
 
     await userService.deleteOauthAccount(userId, provider);
   },
+
 };
 
 module.exports = authService;

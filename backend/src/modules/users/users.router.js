@@ -36,6 +36,6 @@ router.patch(
 );
 
 // --- 1) 공개 프로필 조회 ---
-router.get('//:userid', optionalAuth, usersController.getProfile);
+router.get('/:userid', optionalAuth, usersController.getProfile);
 
 module.exports = router;

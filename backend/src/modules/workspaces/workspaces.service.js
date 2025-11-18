@@ -465,71 +465,94 @@ exports.cancelInvite = async (token) => {
 /**
  * 공유된 프롬프트 목록을 조회합니다. (스펙 14)
  */
-exports.getSharedPromptList = async (workspaceId, pagination) => {
-    const q = pagination.q ? `%${pagination.q}%` : '%';
-    const sortField = pagination.sort === 'name' ? 'p.name' : 'wp.added_at'; // recent: added_at 기준 정렬
+/**
+ * 공유된 프롬프트 목록을 조회합니다. (스펙 14)
+ */
+/**
+ * 공유된 프롬프트 목록을 조회합니다. (스펙 14)
+ */
+exports.getSharedPromptList = async (workspaceId, pagination = {}) => {
+  const page = Number(pagination.page) || 1;
+  const limit = Number(pagination.limit) || 20;
+  const offset = (page - 1) * limit;
 
-    // NOTE: prompt, prompt_version, prompt_owner(user) 테이블 조인 필요
-    const query = `
-        SELECT 
-            wp.role, wp.added_at, 
-            p.id AS prompt_id, p.name AS prompt_name, p.owner_id,
-            v.id AS latest_version_id, v.version_number, v.created_at AS version_created_at,
-            u.userid AS owner_userid, 
-            (SELECT COUNT(*) FROM prompt_stars ps WHERE ps.prompt_id = p.id) AS stars,
-            (SELECT COUNT(*) FROM prompt_forks pf WHERE pf.original_prompt_id = p.id) AS forks,
-            (SELECT GROUP_CONCAT(t.name) FROM prompt_tags pt JOIN tags t ON pt.tag_id = t.id WHERE pt.prompt_id = p.id) AS tags_list,
-            u_added.userid AS added_by_userid
-        FROM 
-            workspace_prompts wp
-        JOIN 
-            prompts p ON wp.prompt_id = p.id
-        JOIN 
-            user u ON p.owner_id = u.id
-        JOIN 
-            user u_added ON wp.added_by = u_added.id
-        LEFT JOIN 
-            prompt_versions v ON p.latest_version_id = v.id
-        WHERE 
-            wp.workspace_id = ? AND p.name LIKE ?
-        ORDER BY 
-            ${sortField} DESC
-        LIMIT ? OFFSET ?
-    `;
+  const q = pagination.q ? `%${pagination.q}%` : '%';
+  const sortField = pagination.sort === 'name' ? 'p.name' : 'wp.added_at';
 
-    const [rows] = await pool.execute(query, [
-        workspaceId, q, pagination.limit, (pagination.page - 1) * pagination.limit
-    ]);
+  const query = `
+    SELECT 
+      wp.role,
+      wp.added_at, 
+      p.id AS prompt_id,
+      p.name AS prompt_name,
+      p.owner_id,
+      v.id AS latest_version_id,
+      v.version_number,
+      v.created_at AS version_created_at,
+      u.userid AS owner_userid,
+      0 AS stars,
+      0 AS forks,
+      NULL AS tags_list,
+      u_added.userid AS added_by_userid
+    FROM 
+      workspace_prompts wp
+    JOIN 
+      prompt p ON wp.prompt_id = p.id
+    JOIN 
+      user u ON p.owner_id = u.id
+    JOIN 
+      user u_added ON wp.added_by = u_added.id
+    LEFT JOIN 
+      prompt_version v ON p.latest_version_id = v.id
+    WHERE 
+      wp.workspace_id = ? 
+      AND p.name LIKE ?
+    ORDER BY 
+      ${sortField} DESC
+    LIMIT ${limit} OFFSET ${offset}        -- ✅ 여기 숫자 박아넣기
+  `;
 
-    const [[{ total }]] = await pool.query(
-        'SELECT COUNT(*) AS total FROM workspace_prompts wp JOIN prompts p ON wp.prompt_id = p.id WHERE wp.workspace_id = ? AND p.name LIKE ?',
-        [workspaceId, q]
-    );
+  // 이제 ? 는 두 개만 있으니까 인자도 두 개만 넘김
+  const [rows] = await pool.execute(query, [workspaceId, q]);
 
-    return {
-        items: rows.map(row => ({
-            prompt: {
-                id: row.prompt_id,
-                name: row.prompt_name,
-                owner: { userid: row.owner_userid }
-            },
-            role: row.role,
-            added_by: { userid: row.added_by_userid },
-            added_at: row.added_at,
-            latest_version: {
-                id: row.latest_version_id,
-                version_number: row.version_number,
-                created_at: row.version_created_at
-            },
-            stars: row.stars,
-            forks: row.forks,
-            tags: row.tags_list ? row.tags_list.split(',') : [],
-        })),
-        page: pagination.page,
-        limit: pagination.limit,
-        total: total,
-    };
+  const [[{ total }]] = await pool.query(
+    `
+      SELECT COUNT(*) AS total
+      FROM workspace_prompts wp
+      JOIN prompt p ON wp.prompt_id = p.id
+      WHERE wp.workspace_id = ? AND p.name LIKE ?
+    `,
+    [workspaceId, q]
+  );
+
+  return {
+    items: rows.map((row) => ({
+      prompt: {
+        id: row.prompt_id,
+        name: row.prompt_name,
+        owner: { userid: row.owner_userid },
+      },
+      role: row.role,
+      added_by: { userid: row.added_by_userid },
+      added_at: row.added_at,
+      latest_version: row.latest_version_id
+        ? {
+            id: row.latest_version_id,
+            version_number: row.version_number,
+            created_at: row.version_created_at,
+          }
+        : null,
+      stars: row.stars,
+      forks: row.forks,
+      tags: row.tags_list ? row.tags_list.split(',') : [],
+    })),
+    page,
+    limit,
+    total,
+  };
 };
+
+
 
 /**
  * 프롬프트를 워크스페이스에 공유합니다. (스펙 15)
@@ -538,7 +561,7 @@ exports.sharePrompt = async (workspaceId, promptId, sharerId, role) => {
     const conn = await beginTransaction();
     try {
         // 1. 프롬프트 존재 및 소유자 확인 (제약: 프롬프트 소유자가 존재해야 함)
-        const [prompt] = await conn.execute('SELECT owner_id FROM prompts WHERE id = ?', [promptId]);
+        const [prompt] = await conn.execute('SELECT owner_id FROM prompt WHERE id = ?', [promptId]);
         if (prompt.length === 0) {
             throw new NotFoundError('PROMPT_NOT_FOUND', 'Prompt does not exist.');
         }
