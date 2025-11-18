@@ -51,6 +51,7 @@ app.use('/api/v1/auth', authRouter);
 app.use('/api/v1/users', userRouter);
 app.use('/api/v1/prompts', promptRouter);
 app.use('/api/v1/workspaces', workspaceRouter);
+app.use('/api/v1/notifications', notificationRouter);
 
 // 404 처리
 app.use((req, res, next) => {
@@ -74,6 +75,6 @@ app.use((err, req, res, next) => {
   });
 });
 
-app.use('/api/v1/notifications', notificationRouter);
+
 
 module.exports = app;
