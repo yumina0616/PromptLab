@@ -11,7 +11,7 @@ const configSchema = z.object({
 
   // JWT (Auth)
   JWT_ACCESS_SECRET: z.string().min(32),
-  JWT_ACCESS_TTL: z.string().default('900').transform(Number), // (초 단위)
+  JWT_ACCESS_TTL: z.string().default('18000').transform(Number), // (초 단위)
   JWT_REFRESH_SECRET: z.string().min(32),
   REFRESH_TTL_DAYS: z.string().default('30').transform(Number),
 

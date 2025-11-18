@@ -25,7 +25,7 @@ const config = {
   // JWT
   jwt: {
     accessSecret: envVars.JWT_ACCESS_SECRET,
-    accessTtl: envVars.JWT_ACCESS_TTL, // 900 (초)
+    accessTtl: envVars.JWT_ACCESS_TTL, // 18000 (초)
     refreshSecret: envVars.JWT_REFRESH_SECRET,
     refreshTtl: envVars.REFRESH_TTL_DAYS * 24 * 60 * 60, // (초)
     

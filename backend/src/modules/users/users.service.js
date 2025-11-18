@@ -31,8 +31,7 @@ const userService = {
   },
 
   getUserByIdForProfile: async (id) => {
-    try {
-      const [rows] = await pool.promise().query(
+    const sql = 
         `
         SELECT
           u.id,
@@ -54,7 +53,6 @@ const userService = {
             SELECT COUNT(*)
             FROM prompt p
             WHERE p.owner_id = u.id
-              AND (p.deleted_at IS NULL OR p.deleted_at = 0)
           ) AS prompt_count,
 
           -- 즐겨찾기 개수
@@ -64,17 +62,14 @@ const userService = {
             JOIN prompt_version v ON v.id = f.prompt_version_id
             JOIN prompt p ON p.id = v.prompt_id
             WHERE p.owner_id = u.id
-              AND (p.deleted_at IS NULL OR p.deleted_at = 0)
           ) AS star_count
 
         FROM user u
         WHERE u.id = ?
-        `,
-        [id]
-      );
-      return rows[0];
-    } catch (error) { throw new Error('Error finding user for profile'); }
-  },
+        `;
+        const [rows] = await pool.promise().query(sql, [id]);
+        return rows[0] || null;
+      },
   
   getUserByIdWithRefreshToken: async (id) => { 
     try {

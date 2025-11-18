@@ -12,7 +12,7 @@ const REFRESH_SECRET =
   process.env.JWT_REFRESH_SECRET;
 
 const ACCESS_TTL =
-  (config.jwt && config.jwt.accessTtl) || 900; // 초 단위
+  (config.jwt && config.jwt.accessTtl) || 18000; // 초 단위
 
 const RESET_SECRET =
   (config.jwt && config.jwt.resetSecret) || process.env.JWT_RESET_SECRET;

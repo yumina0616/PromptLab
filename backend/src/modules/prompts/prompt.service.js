@@ -492,6 +492,7 @@ exports.createVersion = function(userId, promptId, body, done){
     ensureOwner(conn, userId, promptId, function(err){
       if (err) return cb(err);
 
+      // 1) 다음 버전 번호 계산
       conn.query(
         'SELECT IFNULL(MAX(version_number), 0) + 1 AS next_no FROM prompt_version WHERE prompt_id = ?',
         [promptId],
@@ -499,89 +500,73 @@ exports.createVersion = function(userId, promptId, body, done){
           if (err2) return cb(err2);
           const version_number = cnt[0].next_no;
 
+          // 2) 카테고리 ID 결정
           getCategoryIdByCode(conn, body.category_code, function(err3, categoryId){
             if (err3) return cb(err3);
 
-            // ✅ 1) 이번 버전을 확정(is_draft=false)으로 만들 거라면
-            //    기존 확정 버전들(is_draft = 0)을 모두 1로 올려준다.
-            function updateOldDrafts(next){
-              if (body.is_draft === false) {
-                conn.query(
-                  'UPDATE prompt_version SET is_draft = 1 WHERE prompt_id = ? AND is_draft = 0',
-                  [promptId],
-                  function(err) { next(err); }
-                );
-              } else {
-                next(null);
-              }
-            }
+            // 3) 새 버전 INSERT (is_draft는 항상 0으로 고정)
+            conn.query(
+              `INSERT INTO prompt_version
+                 (prompt_id, version_number, commit_message, content,
+                  is_draft, revision, created_by, category_id)
+               VALUES (?, ?, ?, ?, 0, 1, ?, ?)`,
+              [
+                promptId,
+                version_number,
+                body.commit_message,
+                body.content,
+                userId,
+                categoryId
+              ],
+              function(err4, vr){
+                if (err4) return cb(err4);
+                const verId = vr.insertId;
 
-            updateOldDrafts(function(err4){
-              if (err4) return cb(err4);
-
-              // ✅ 2) 새 버전 insert
-              conn.query(
-                `INSERT INTO prompt_version
-                 (prompt_id, version_number, commit_message, content, is_draft, revision, created_by, category_id)
-                 VALUES (?, ?, ?, ?, ?, 1, ?, ?)`,
-                [
-                  promptId,
-                  version_number,
-                  body.commit_message,
-                  body.content,
-                  body.is_draft ? 1 : 0,
-                  userId,
-                  categoryId
-                ],
-                function(err5, vr){
-                  if (err5) return cb(err5);
-                  const verId = vr.insertId;
-
-                  function doneModelSetting(next){
-                    if (!body.model_setting) return next();
-                    const ms = body.model_setting;
-                    conn.query(
-                      `INSERT INTO model_setting
-                       (prompt_version_id, ai_model_id, temperature, max_token, top_p, frequency_penalty, presence_penalty)
-                       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-                      [
-                        verId,
-                        ms.ai_model_id,
-                        ms.temperature || 1.0,
-                        ms.max_token || null,
-                        ms.top_p || null,
-                        ms.frequency_penalty || null,
-                        ms.presence_penalty || null
-                      ],
-                      function(err6){ next(err6); }
-                    );
-                  }
-
-                  doneModelSetting(function(err7){
-                    if (err7) return cb(err7);
-
-                    if (body.is_draft) {
-                      return cb(null, { id: verId, version_number, is_draft: true });
-                    }
-
-                    conn.query(
-                      'UPDATE prompt SET latest_version_id = ? WHERE id = ?',
-                      [verId, promptId],
-                      function(err8){
-                        if (err8) return cb(err8);
-                        cb(null, { id: verId, version_number, is_draft: false });
-                      }
-                    );
-                  });
+                // 4) model_setting 있으면 저장
+                function doneModelSetting(next){
+                  if (!body.model_setting) return next();
+                  const ms = body.model_setting;
+                  conn.query(
+                    `INSERT INTO model_setting
+                       (prompt_version_id, ai_model_id,
+                        temperature, max_token, top_p,
+                        frequency_penalty, presence_penalty)
+                     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                    [
+                      verId,
+                      ms.ai_model_id,
+                      ms.temperature || 1.0,
+                      ms.max_token || null,
+                      ms.top_p || null,
+                      ms.frequency_penalty || null,
+                      ms.presence_penalty || null
+                    ],
+                    function(err5){ next(err5); }
+                  );
                 }
-              );
-            });
+
+                doneModelSetting(function(err6){
+                  if (err6) return cb(err6);
+
+                  // 5) 항상 이 버전을 latest_version으로 세팅
+                  conn.query(
+                    'UPDATE prompt SET latest_version_id = ? WHERE id = ?',
+                    [verId, promptId],
+                    function(err7){
+                      if (err7) return cb(err7);
+                      cb(null, { id: verId, version_number, is_draft: false });
+                    }
+                  );
+                });
+              }
+            );
           });
         }
       );
     });
   }, done);
 };
+
 
 
 exports.getVersion = function(userId, promptId, verId, done){
@@ -624,32 +609,39 @@ exports.updateVersion = function(userId, promptId, verId, patch, done){
 
         const fields = [];
         const params = [];
-        if (patch.commit_message !== undefined) { fields.push('commit_message = ?'); params.push(patch.commit_message); }
-        if (patch.is_draft !== undefined) { fields.push('is_draft = ?'); params.push(patch.is_draft ? 1 : 0); }
-        if (patch.category_code !== undefined) { fields.push('category_id = ?'); params.push(categoryId); }
+
+        if (patch.commit_message !== undefined) {
+          fields.push('commit_message = ?');
+          params.push(patch.commit_message);
+        }
+        // is_draft는 이제 안 건드림
+        if (patch.category_code !== undefined) {
+          fields.push('category_id = ?');
+          params.push(categoryId);
+        }
 
         function afterUpdate(){
-          if (patch.is_draft === false) {
-            conn.query('UPDATE prompt SET latest_version_id = ? WHERE id = ?', [verId, promptId], function(e3){
-              if (e3) return cb(e3);
-              conn.query('SELECT id, is_draft FROM prompt_version WHERE id = ?', [verId], function(e4, r){
-                if (e4) return cb(e4);
-                cb(null, r[0]);
-              });
-            });
-          } else {
-            conn.query('SELECT id, is_draft FROM prompt_version WHERE id = ?', [verId], function(e4, r){
+          // 이제 latest_version_id는 create에서만 바꾸고,
+          // 여기서는 단순히 수정 결과만 리턴
+          conn.query(
+            'SELECT id, is_draft FROM prompt_version WHERE id = ?',
+            [verId],
+            function(e4, r){
               if (e4) return cb(e4);
               cb(null, r[0]);
-            });
-          }
+            }
+          );
         }
 
         if (fields.length) {
-          conn.query('UPDATE prompt_version SET ' + fields.join(', ') + ' WHERE id = ?', [...params, verId], function(e2){
-            if (e2) return cb(e2);
-            afterUpdate();
-          });
+          conn.query(
+            'UPDATE prompt_version SET ' + fields.join(', ') + ' WHERE id = ?',
+            [...params, verId],
+            function(e2){
+              if (e2) return cb(e2);
+              afterUpdate();
+            }
+          );
         } else {
           afterUpdate();
         }
@@ -663,38 +655,60 @@ exports.deleteVersion = function(userId, promptId, verId, done){
     ensureOwner(conn, userId, promptId, function(err){
       if (err) return cb(err);
 
-      conn.query('SELECT COUNT(*) AS c FROM prompt_version WHERE prompt_id = ?', [promptId], function(e2, cnt){
-        if (e2) return cb(e2);
-        if (Number(cnt[0].c) <= 1) return cb(httpError(400, 'LAST_VERSION_DELETION_FORBIDDEN'));
+      conn.query(
+        'SELECT COUNT(*) AS c FROM prompt_version WHERE prompt_id = ?',
+        [promptId],
+        function(e2, cnt){
+          if (e2) return cb(e2);
+          if (Number(cnt[0].c) <= 1) {
+            return cb(httpError(400, 'LAST_VERSION_DELETION_FORBIDDEN'));
+          }
 
-        conn.query('SELECT latest_version_id FROM prompt WHERE id = ?', [promptId], function(e3, r){
-          if (e3) return cb(e3);
-          const latestId = r[0] ? r[0].latest_version_id : null;
+          conn.query(
+            'SELECT latest_version_id FROM prompt WHERE id = ?',
+            [promptId],
+            function(e3, r){
+              if (e3) return cb(e3);
+              const latestId = r[0] ? r[0].latest_version_id : null;
 
-          conn.query('DELETE FROM prompt_version WHERE id = ?', [verId], function(e4){
-            if (e4) return cb(e4);
-
-            if (latestId === verId) {
               conn.query(
-                `SELECT id FROM prompt_version
-                 WHERE prompt_id = ? AND is_draft = 0
-                 ORDER BY version_number DESC LIMIT 1`,
-                [promptId],
-                function(e5, lv){
-                  if (e5) return cb(e5);
-                  const newLatest = lv[0] ? lv[0].id : null;
-                  conn.query('UPDATE prompt SET latest_version_id = ? WHERE id = ?', [newLatest, promptId], function(e6){
-                    if (e6) return cb(e6);
+                'DELETE FROM prompt_version WHERE id = ?',
+                [verId],
+                function(e4){
+                  if (e4) return cb(e4);
+
+                  if (latestId === verId) {
+                    // 남은 버전 중 version_number 가장 큰 걸 latest로
+                    conn.query(
+                      `SELECT id
+                         FROM prompt_version
+                        WHERE prompt_id = ?
+                        ORDER BY version_number DESC
+                        LIMIT 1`,
+                      [promptId],
+                      function(e5, lv){
+                        if (e5) return cb(e5);
+                        const newLatest = lv[0] ? lv[0].id : null;
+
+                        conn.query(
+                          'UPDATE prompt SET latest_version_id = ? WHERE id = ?',
+                          [newLatest, promptId],
+                          function(e6){
+                            if (e6) return cb(e6);
+                            cb(null);
+                          }
+                        );
+                      }
+                    );
+                  } else {
                     cb(null);
-                  });
+                  }
                 }
               );
-            } else {
-              cb(null);
             }
-          });
-        });
-      });
+          );
+        }
+      );
     });
   }, done);
 };
