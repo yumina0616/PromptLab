@@ -678,34 +678,41 @@ exports.getSharedPromptList = async (workspaceId, pagination = {}) => {
  * 프롬프트를 워크스페이스에 공유합니다. (스펙 15)
  */
 exports.sharePrompt = async (workspaceId, promptId, sharerId, role) => {
-  const conn = await beginTransaction();
-  try {
-    const [prompt] = await conn.execute('SELECT owner_id FROM prompt WHERE id = ?', [promptId]);
-    if (prompt.length === 0) {
-      throw new NotFoundError('PROMPT_NOT_FOUND', 'Prompt does not exist.');
-    }
+  const conn = await beginTransaction();
+  try {
+    const [prompt] = await conn.execute('SELECT owner_id FROM prompt WHERE id = ?', [promptId]);
+    if (prompt.length === 0) {
+      throw new NotFoundError('PROMPT_NOT_FOUND', 'Prompt does not exist.');
+    }
 
-    const [existing] = await conn.execute(
-      'SELECT 1 FROM workspace_prompts WHERE workspace_id = ? AND prompt_id = ?',
-      [workspaceId, promptId]
-    );
-    if (existing.length > 0) {
-      throw new ConflictError('ALREADY_SHARED', 'Prompt is already shared with this workspace.');
-    }
+    const [existing] = await conn.execute(
+      'SELECT 1 FROM workspace_prompts WHERE workspace_id = ? AND prompt_id = ?',
+      [workspaceId, promptId]
+    );
+    if (existing.length > 0) {
+      throw new ConflictError('ALREADY_SHARED', 'Prompt is already shared with this workspace.');
+    }
 
-    await conn.execute(
-      'INSERT INTO workspace_prompts (workspace_id, prompt_id, role, added_by) VALUES (?, ?, ?, ?)',
-      [workspaceId, promptId, role, sharerId]
-    );
+    // 1. workspace_prompts에 공유 정보 삽입
+    await conn.execute(
+      'INSERT INTO workspace_prompts (workspace_id, prompt_id, role, added_by) VALUES (?, ?, ?, ?)',
+      [workspaceId, promptId, role, sharerId]
+    );
 
-    await conn.commit();
-    return { workspace_id: workspaceId, prompt_id: promptId, role };
-  } catch (error) {
-    await conn.rollback();
-    throw error;
-  } finally {
-    conn.release();
-  }
+    // 2. ★ [추가] 공유하는 순간 Prompt의 visibility를 'private'으로 강제 변경
+    await conn.execute(
+      'UPDATE prompt SET visibility = ? WHERE id = ?',
+      ['private', promptId]
+    );
+    
+    await conn.commit();
+    return { workspace_id: workspaceId, prompt_id: promptId, role };
+  } catch (error) {
+    await conn.rollback();
+    throw error;
+  } finally {
+    conn.release();
+  }
 };
 
 /**
