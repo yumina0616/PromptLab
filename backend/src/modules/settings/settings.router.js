@@ -2,6 +2,9 @@
 const express = require('express');
 const router = express.Router();
 const ctrl = require('./settings.controller');
+const passport = require('passport');
+
+const authMiddleware = passport.authenticate('jwt', { session: false });
 
 // 전부 로그인 필요라고 가정 (app.js에서 임시 user 넣어주는 거 이미 있음)
 
