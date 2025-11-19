@@ -6,7 +6,7 @@ if (!GEMINI_API_KEY) {
 }
 
 const DEFAULT_MODEL =
-  process.env.RAG_TIPS_MODEL || process.env.GEMINI_MODEL || 'gemini-1.5-flash';
+  process.env.RAG_TIPS_MODEL || process.env.GEMINI_MODEL || 'gemini-2.0-flash';
 const DEFAULT_EMBED_MODEL =
   process.env.RAG_TIPS_EMBED_MODEL || process.env.GEMINI_EMBED_MODEL || 'text-embedding-004';
 
