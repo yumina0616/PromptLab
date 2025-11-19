@@ -420,14 +420,8 @@ exports.sendInvite = async (workspaceId, inviterId, email, role) => {
       'INSERT INTO workspace_invites (workspace_id, invited_by, invited_email, role, token, expires_at, status) VALUES (?, ?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL 7 DAY), ?)',
       [workspaceId, inviterId, email, role, token, 'pending'] // 👈 status 필드 추가 및 'pending' 명시
     );
-    
-    // ----------------------------------------------------
-    // ❌ 4. 초대와 동시에 워크스페이스 멤버로 추가 (자동 수락) -> 이 로직은 삭제 (또는 주석 처리)
-    // ❌ 5. 초대 status 를 accepted 로 변경 -> 이 로직은 삭제 (또는 주석 처리)
-    // ----------------------------------------------------
 
-    // 5. 알림 전송 로직 추가 (Notification Service 함수를 호출)
-    // 💡 워크스페이스 이름 등의 정보가 필요함. 여기서는 예시로 대체합니다.
+    // 5. 알림 전송 로직
     const workspaceInfo = await exports.getWorkspaceById(workspaceId);
 
 // 5. 알림 서비스 호출
@@ -435,12 +429,23 @@ exports.sendInvite = async (workspaceId, inviterId, email, role) => {
         userId: user.id, // 초대받는 사람
         type: 'invite', 
         title: `${workspaceInfo.name} 워크스페이스 초대`, // 👈 workspaceInfo에서 name 속성 사용
-        body: `역할: ${role} (수락해주세요)`,
+        body: `${role} 권한으로 워크스페이스에 추가되었습니다.`,
         entity_type: 'workspace_invite',
         entity_id: token, // 초대 토큰 또는 레코드 ID를 연결
         actor_user_id: inviterId, // inviterId 사용
         workspace_id: workspaceId,
     });
+
+// 4. 초대와 동시에 워크스페이스 멤버로 추가 (자동 수락/복원)
+    await conn.execute(
+        'INSERT INTO workspace_members (workspace_id, user_id, role) VALUES (?, ?, ?)',
+        [workspaceId, user.id, role]
+    );
+
+    // 5. 초대 status 를 accepted 로 변경 (복원)
+    await conn.execute('UPDATE workspace_invites SET status = "accepted" WHERE token = ?', [
+        token,
+    ]);
 
     // 6. 이메일 전송(선택) - 여기서는 알림 용도로만 사용
     const inviteUrl = `${config.appUrl}/workspace`; // 더 이상 토큰 수락용 URL은 필요 없음
