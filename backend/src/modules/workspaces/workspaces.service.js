@@ -12,6 +12,7 @@ const { generateSlug } = require('../../shared/utils');
 const userService = require('../users/users.service');
 const emailService = require('../auth/email');
 const promptsService = require('../prompts/prompt.service');
+const notificationService = require('../notifications/notification.service');
 
 /**
  * 헬퍼 함수: DB 트랜잭션을 시작합니다.
@@ -404,38 +405,42 @@ exports.removeMember = async (workspaceId, targetUserId) => {
 exports.sendInvite = async (workspaceId, inviterId, email, role) => {
   const conn = await beginTransaction();
   try {
-    // 1. 이메일로 사용자 찾기 (존재해야만 자동 초대 가능)
+    // ... (1. 이메일로 사용자 찾기)
     const user = await userService.getUserByEmail(email);
     if (!user) {
       throw new NotFoundError('USER_NOT_FOUND', 'User with this email does not exist.');
     }
 
     // 2. 이미 멤버인지 확인 (중복 초대 방지)
-    const [existingMember] = await conn.execute(
-      'SELECT 1 FROM workspace_members WHERE workspace_id = ? AND user_id = ?',
-      [workspaceId, user.id]
-    );
-    if (existingMember.length > 0) {
-      throw new ConflictError('ALREADY_MEMBER', 'User is already a member of this workspace.');
-    }
+    // 3. 이미 초대 대기 중인지 확인 (중복 발송 방지, 필요 시)
 
-    // 3. 초대 레코드 생성 (기록용, 기본 status = pending)
+    // 4. 초대 레코드 생성 (기록용, 기본 status = pending)
     const token = uuid.v4();
     await conn.execute(
-      'INSERT INTO workspace_invites (workspace_id, invited_by, invited_email, role, token, expires_at) VALUES (?, ?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL 7 DAY))',
-      [workspaceId, inviterId, email, role, token]
+      'INSERT INTO workspace_invites (workspace_id, invited_by, invited_email, role, token, expires_at, status) VALUES (?, ?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL 7 DAY), ?)',
+      [workspaceId, inviterId, email, role, token, 'pending'] // 👈 status 필드 추가 및 'pending' 명시
     );
+    
+    // ----------------------------------------------------
+    // ❌ 4. 초대와 동시에 워크스페이스 멤버로 추가 (자동 수락) -> 이 로직은 삭제 (또는 주석 처리)
+    // ❌ 5. 초대 status 를 accepted 로 변경 -> 이 로직은 삭제 (또는 주석 처리)
+    // ----------------------------------------------------
 
-    // 4. 초대와 동시에 워크스페이스 멤버로 추가 (자동 수락)
-    await conn.execute(
-      'INSERT INTO workspace_members (workspace_id, user_id, role) VALUES (?, ?, ?)',
-      [workspaceId, user.id, role]
-    );
-
-    // 5. 초대 status 를 accepted 로 변경
-    await conn.execute('UPDATE workspace_invites SET status = "accepted" WHERE token = ?', [
-      token,
-    ]);
+    // 5. 알림 전송 로직 추가 (Notification Service 함수를 호출)
+    // 💡 워크스페이스 이름 등의 정보가 필요함. 여기서는 예시로 대체합니다.
+    const workspaceInfo = await workspaceService.getWorkspaceById(workspaceId); // 예시: 워크스페이스 정보 조회
+    
+    // 알림 서비스 호출
+    await notificationService.createNotification(conn, { 
+        userId: user.id, // 초대받는 사람
+        type: 'invite', 
+        title: `${workspaceInfo.name} 워크스페이스 초대`, 
+        body: `역할: ${role} (수락해주세요)`,
+        entityType: 'workspace_invite',
+        entityId: token, // 초대 토큰 또는 레코드 ID를 연결
+        actorUserId: inviterId,
+        workspaceId: workspaceId,
+    });
 
     // 6. 이메일 전송(선택) - 여기서는 알림 용도로만 사용
     const inviteUrl = `${config.appUrl}/workspace`; // 더 이상 토큰 수락용 URL은 필요 없음
@@ -446,7 +451,7 @@ exports.sendInvite = async (workspaceId, inviterId, email, role) => {
     // await emailService.sendInviteEmail(email, inviteUrl, /* workspace name */);
 
     await conn.commit();
-    return { token, status: 'accepted', invited_email: email, role, user_id: user.id };
+    return { token, status: 'pending', invited_email: email, role, user_id: user.id };
   } catch (error) {
     await conn.rollback();
     throw error;

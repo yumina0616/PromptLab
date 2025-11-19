@@ -286,3 +286,34 @@ exports.clearNotifications = function (userId, query, cb) {
     cb(null, true);
   });
 };
+
+/**
+ * 알림 생성 함수 (트랜잭션(conn)을 사용하여 호출)
+ * @param {object} conn - MySQL 연결 객체 (트랜잭션을 위해)
+ * @param {object} notifData - 알림 데이터
+ */
+exports.createNotification = async (conn, notifData) => {
+    // notifData: { userId, type, title, body, entityType, entityId, actorUserId, workspaceId }
+    
+    // 알림 생성 SQL
+    const sql = `
+        INSERT INTO notification 
+        (user_id, type, title, body, entity_type, entity_id, 
+         actor_user_id, workspace_id, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())
+    `;
+
+    const params = [
+        notifData.userId,
+        notifData.type,
+        notifData.title,
+        notifData.body,
+        notifData.entity_type, // 'entity_type'으로 수정
+        notifData.entity_id,   // 'entity_id'로 수정
+        notifData.actor_user_id,
+        notifData.workspace_id,
+    ];
+
+    // conn.execute를 사용 (트랜잭션 내부에서 실행되도록)
+    await conn.execute(sql, params);
+};
