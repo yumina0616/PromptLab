@@ -5,8 +5,10 @@ if (!GEMINI_API_KEY) {
   throw new Error('GEMINI_API_KEY is not configured. Check backend/.env');
 }
 
-const DEFAULT_MODEL = process.env.GEMINI_MODEL || 'gemini-1.5-pro';
-const DEFAULT_EMBED_MODEL = process.env.GEMINI_EMBED_MODEL || 'text-embedding-004';
+const DEFAULT_MODEL =
+  process.env.RAG_TIPS_MODEL || process.env.GEMINI_MODEL || 'gemini-2.0-flash';
+const DEFAULT_EMBED_MODEL =
+  process.env.RAG_TIPS_EMBED_MODEL || process.env.GEMINI_EMBED_MODEL || 'text-embedding-004';
 
 const client = new GoogleGenerativeAI(GEMINI_API_KEY);
 const generativeModel = client.getGenerativeModel({ model: DEFAULT_MODEL });
