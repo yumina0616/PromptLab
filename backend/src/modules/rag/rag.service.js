@@ -56,11 +56,12 @@ class RagService {
     const embedding = await embedText(queryText);
     const guidelines = await ragRepository.listGuidelinesWithEmbeddings();
     const scored = guidelines
+      .filter((item) => Array.isArray(item.embedding) && item.embedding.length)
       .map((item) => ({
         ...item,
         similarity: cosineSimilarity(embedding, item.embedding),
       }))
-      .filter((item) => item.similarity > 0)
+      .filter((item) => Number.isFinite(item.similarity) && item.similarity > 0)
       .sort((a, b) => b.similarity - a.similarity)
       .slice(0, limit);
 

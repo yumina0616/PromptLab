@@ -51,8 +51,17 @@ exports.listGuidelinesWithEmbeddings = async () => {
      ORDER BY created_at DESC`
   );
 
-  return rows.map((row) => ({
-    ...row,
-    embedding: row.embedding ? JSON.parse(row.embedding) : null,
-  }));
+  return rows.map((row) => {
+    let embedding = null;
+    if (row.embedding) {
+      try {
+        embedding =
+          typeof row.embedding === 'string' ? JSON.parse(row.embedding) : row.embedding;
+      } catch (err) {
+        console.error(`Failed to parse embedding for guideline ${row.id}:`, err.message);
+        embedding = null;
+      }
+    }
+    return { ...row, embedding };
+  });
 };
