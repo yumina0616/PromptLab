@@ -428,18 +428,18 @@ exports.sendInvite = async (workspaceId, inviterId, email, role) => {
 
     // 5. 알림 전송 로직 추가 (Notification Service 함수를 호출)
     // 💡 워크스페이스 이름 등의 정보가 필요함. 여기서는 예시로 대체합니다.
-    const workspaceInfo = await workspaceService.getWorkspaceById(workspaceId); // 예시: 워크스페이스 정보 조회
-    
-    // 알림 서비스 호출
+    const workspaceInfo = await exports.getWorkspaceById(workspaceId);
+
+// 5. 알림 서비스 호출
     await notificationService.createNotification(conn, { 
         userId: user.id, // 초대받는 사람
         type: 'invite', 
-        title: `${workspaceInfo.name} 워크스페이스 초대`, 
+        title: `${workspaceInfo.name} 워크스페이스 초대`, // 👈 workspaceInfo에서 name 속성 사용
         body: `역할: ${role} (수락해주세요)`,
-        entityType: 'workspace_invite',
-        entityId: token, // 초대 토큰 또는 레코드 ID를 연결
-        actorUserId: inviterId,
-        workspaceId: workspaceId,
+        entity_type: 'workspace_invite',
+        entity_id: token, // 초대 토큰 또는 레코드 ID를 연결
+        actor_user_id: inviterId, // inviterId 사용
+        workspace_id: workspaceId,
     });
 
     // 6. 이메일 전송(선택) - 여기서는 알림 용도로만 사용
