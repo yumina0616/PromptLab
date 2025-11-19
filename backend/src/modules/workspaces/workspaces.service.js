@@ -12,6 +12,7 @@ const { generateSlug } = require('../../shared/utils');
 const userService = require('../users/users.service');
 const emailService = require('../auth/email');
 const promptsService = require('../prompts/prompt.service');
+const notificationService = require('../notifications/notification.service');
 
 /**
  * 헬퍼 함수: DB 트랜잭션을 시작합니다.
