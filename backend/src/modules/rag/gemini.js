@@ -35,7 +35,7 @@ async function generateTips({ prompt, context, temperature = 0.3, topP = 0.8, ma
     )
     .join('\n\n');
 
-  const userPrompt = `
+const userPrompt = `
 You are PromptLab's prompt coach. Review the user's playground prompt and provide 3-5 concrete improvement suggestions.
 
 User prompt:
@@ -46,7 +46,10 @@ ${prompt}
 Guidelines to reference:
 ${promptContext || 'No guidelines found. Provide generic best practices.'}
 
-Respond in Korean when the user prompt is mostly Korean; otherwise respond in English. Use markdown bullets. Mention the most relevant guideline titles inline when possible.
+Instructions:
+- Respond in Korean when the user prompt is mostly Korean; otherwise respond in English.
+- Use markdown bullets for the main suggestions and mention the most relevant guideline titles inline when helpful.
+- After the bullet list, add a section titled "수정 프롬프트" and provide a fully rewritten prompt that combines the advice. Wrap the rewritten prompt in a fenced code block so the client can extract it easily.
 `.trim();
 
   const response = await generativeModel.generateContent({
