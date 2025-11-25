@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Sheet, SheetContent, SheetTrigger, SheetTitle, SheetDescription, SheetHeader } from '@/components/ui/sheet';
+import { NotificationDropdown } from '@/components/shared/NotificationDropdown';
 import logoImage from '@/assets/logo.png';
 import { useAppStore } from '@/store/useAppStore';
 
@@ -19,8 +20,9 @@ export function Header() {
   const navigate = useNavigate();
   const location = useLocation();
   const isAuthenticated = useAppStore((state) => state.isAuthenticated);
+  const user = useAppStore((state) => state.user);
   const logout = useAppStore((state) => state.logout);
-  const setSelectedPrompt = useAppStore((state) => state.setSelectedPrompt);
+  const setSelectedPromptId = useAppStore((state) => state.setSelectedPromptId);
 
   if (!isAuthenticated) return null;
 
@@ -36,7 +38,7 @@ export function Header() {
   };
 
   const goToEditor = () => {
-    setSelectedPrompt(undefined);
+    setSelectedPromptId(null);
     handleNavigation('/editor');
   };
 
@@ -102,8 +104,8 @@ export function Header() {
 
         <div className="flex items-center gap-2 sm:gap-3">
           {/* Desktop New Prompt Button */}
-          <Button 
-            onClick={goToEditor} 
+          <Button
+            onClick={goToEditor}
             className="hidden sm:flex glow-primary bg-primary hover:bg-primary/90"
             size="sm"
           >
@@ -112,13 +114,16 @@ export function Header() {
           </Button>
 
           {/* Mobile New Prompt Button */}
-          <Button 
-            onClick={goToEditor} 
+          <Button
+            onClick={goToEditor}
             className="sm:hidden glow-primary bg-primary hover:bg-primary/90"
             size="icon"
           >
             <Code2 className="w-4 h-4" />
           </Button>
+
+          {/* Notification Bell */}
+          <NotificationDropdown />
 
           {/* User Dropdown */}
           <DropdownMenu>
@@ -126,15 +131,15 @@ export function Header() {
               <button className="flex items-center gap-2 hover:opacity-80 transition-opacity">
                 <Avatar className="w-8 h-8 border-2 border-primary/20">
                   <AvatarFallback className="bg-primary text-white text-sm">
-                    DM
+                    {user?.display_name?.slice(0, 2).toUpperCase() || 'U'}
                   </AvatarFallback>
                 </Avatar>
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48">
               <div className="px-2 py-1.5">
-                <p className="text-sm">김개발</p>
-                <p className="text-xs text-muted-foreground">@dev_master</p>
+                <p className="text-sm">{user?.display_name || '사용자'}</p>
+                <p className="text-xs text-muted-foreground">@{user?.userid || 'unknown'}</p>
               </div>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => handleNavigation('/profile')}>

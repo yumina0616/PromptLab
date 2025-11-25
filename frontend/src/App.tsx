@@ -26,10 +26,14 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
 
 export default function App() {
   const isAuthenticated = useAppStore((state) => state.isAuthenticated);
+  const initializeAuth = useAppStore((state) => state.initializeAuth);
 
   useEffect(() => {
     document.documentElement.classList.add('dark');
-  }, []);
+
+    // 자동 로그인: localStorage에 토큰이 있으면 자동으로 로그인 상태로 전환
+    initializeAuth();
+  }, [initializeAuth]);
 
   return (
     <BrowserRouter>
